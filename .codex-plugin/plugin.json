@@ -1,15 +1,15 @@
 {
   "name": "codex-usage",
   "version": "0.1.0",
-  "description": "Private, local usage attribution for Codex conversations and tasks.",
+  "description": "Private, local Codex usage cards and cross-task attribution.",
   "author": {
     "name": "Geoff Hudik"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Codex Usage",
-    "shortDescription": "See where local Codex usage went.",
-    "longDescription": "A private dashboard for conversation-level and cross-task Codex usage. It reads local Codex metadata and session transcripts without sending them anywhere.",
+    "shortDescription": "Compact local usage cards for Codex.",
+    "longDescription": "A private native card for conversation context pressure and cross-task Codex usage. It reads local Codex metadata and session transcripts without sending them anywhere.",
     "developerName": "Geoff Hudik",
     "category": "Productivity",
     "capabilities": [
@@ -17,7 +17,7 @@
       "Read"
     ],
     "defaultPrompt": [
-      "Show usage for this conversation.",
+      "Show the compact usage card for this conversation.",
       "Show usage across my current Codex window.",
       "Which tasks used the most Codex capacity this week?"
     ],

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Codex Usage</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #17211f; background: transparent; }
+    .card { border: 1px solid #dce4e1; border-radius: 12px; overflow: hidden; background: #fbfdfc; }
+    summary { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 11px 13px; cursor: pointer; list-style: none; }
+    summary::-webkit-details-marker { display: none; }
+    .mark { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 7px; color: white; background: #0f766e; font-weight: 750; font-size: 12px; }
+    .line { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 10px; }
+    .title { font-size: 13px; font-weight: 720; }
+    .status { color: #52615d; font-size: 12px; font-variant-numeric: tabular-nums; }
+    .chevron { color: #71807c; transition: transform .16s ease; }
+    details[open] .chevron { transform: rotate(180deg); }
+    .detail { border-top: 1px solid #e5ebe9; padding: 13px; }
+    .task { margin: 0 0 12px; font-size: 15px; font-weight: 720; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .meter { height: 6px; border-radius: 99px; overflow: hidden; background: #e5ebe9; margin: 6px 0 13px; }
+    .meter > span { display: block; height: 100%; border-radius: inherit; background: #0f766e; }
+    .meter.warning > span { background: #b7791f; }
+    .meter.critical > span { background: #c2413a; }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+    .metric { min-width: 0; padding: 9px; border-radius: 8px; background: #f0f5f3; }
+    .metric span { display: block; color: #64736f; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+    .metric strong { display: block; margin-top: 3px; font-size: 14px; font-variant-numeric: tabular-nums; }
+    .alert { margin-top: 10px; padding: 9px 10px; border-left: 3px solid #b7791f; border-radius: 5px; background: #fff7e8; font-size: 12px; }
+    .alert.critical { border-color: #c2413a; background: #fff0ee; }
+    .alert strong { display: block; margin-bottom: 2px; }
+    h3 { margin: 14px 0 6px; color: #52615d; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+    .tasks { display: grid; gap: 5px; }
+    .row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 9px; align-items: center; font-size: 11px; }
+    .row .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row .share { color: #71807c; }
+    .note { margin: 12px 0 0; color: #71807c; font-size: 10px; line-height: 1.35; }
+    .loading { padding: 12px 14px; color: #64736f; font-size: 12px; }
+    @media (max-width: 520px) { .grid { grid-template-columns: repeat(2, 1fr); } .status { flex-basis: 100%; } }
+    @media (prefers-color-scheme: dark) {
+      body { color: #edf4f1; }
+      .card { background: #151b1a; border-color: #34403d; }
+      .status, h3 { color: #aebbb7; }
+      .detail { border-color: #34403d; }
+      .meter { background: #34403d; }
+      .metric { background: #202927; }
+      .metric span, .chevron, .row .share, .note, .loading { color: #9caaa6; }
+      .alert { background: #352a18; }
+      .alert.critical { background: #351e1d; }
+    }
+  </style>
+</head>
+<body>
+  <main id="root" class="card"><div class="loading">Reading local Codex usage…</div></main>
+  <script>
+    (() => {
+      const root = document.getElementById('root');
+      const compact = n => new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(Number(n || 0));
+      const pct = n => n == null ? '—' : `${Number(n).toFixed(Number(n) < 10 ? 1 : 0)}%`;
+      const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
+      const when = epoch => epoch ? new Intl.DateTimeFormat(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }).format(new Date(epoch * 1000)) : '—';
+      const metric = (label, value) => `<div class="metric"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+      const notifyHeight = () => window.openai?.notifyIntrinsicHeight?.(document.documentElement.scrollHeight);
+
+      function render(data) {
+        if (!data || data.kind !== 'usage_card') return;
+        const context = data.context || {};
+        const session = data.sessionUsage || {};
+        const latest = data.latestTurn || {};
+        const limit = data.limit || {};
+        const account = limit.usedPercent == null ? 'Account —' : `Account ${pct(limit.usedPercent)}`;
+        const taskRows = (data.topTasks || []).map(task => `<div class="row"><span class="name">${esc(task.name)}</span><strong>${compact(task.totalTokens)}</strong><span class="share">${pct(task.sharePercent)}</span></div>`).join('');
+        const alerts = (data.alerts || []).map(alert => `<div class="alert ${esc(alert.level)}"><strong>${esc(alert.title)}</strong>${esc(alert.detail)}</div>`).join('');
+        const expanded = Boolean(window.openai?.widgetState?.expanded);
+        root.innerHTML = `
+          <details ${expanded ? 'open' : ''}>
+            <summary>
+              <span class="mark">CU</span>
+              <span class="line"><span class="title">Codex usage</span><span class="status">Context ${pct(context.usedPercent)} · Session ${compact(data.combinedTokens)} raw · ${account}</span></span>
+              <span class="chevron" aria-hidden="true">⌄</span>
+            </summary>
+            <section class="detail">
+              <p class="task" title="${esc(data.thread?.name)}">${esc(data.thread?.name || 'Current conversation')}</p>
+              <div class="meter ${esc(context.level)}"><span style="width:${Math.min(100, Number(context.usedPercent || 0))}%"></span></div>
+              <div class="grid">
+                ${metric('Context', `${compact(context.inputTokens)} / ${compact(context.windowTokens)}`)}
+                ${metric('Session', `${compact(data.combinedTokens)} raw`)}
+                ${metric('Cached input', pct(session.cachedPercent))}
+                ${metric('Latest output', compact(latest.outputTokens))}
+                ${metric('Latest processed', compact(latest.totalTokens))}
+                ${metric('Subagents', compact(data.subagentTokens))}
+                ${metric('Account window', pct(limit.usedPercent))}
+                ${metric('Resets', when(limit.resetsAt))}
+              </div>
+              ${alerts}
+              <h3>Top tasks this account window</h3>
+              <div class="tasks">${taskRows || '<span class="note">No recorded activity.</span>'}</div>
+              <p class="note">Raw local token counters are attribution clues, not an authoritative quota ledger. Cached input, model choice, reasoning, and internal work may be weighted differently.</p>
+            </section>
+          </details>`;
+        const details = root.querySelector('details');
+        details.addEventListener('toggle', () => {
+          window.openai?.setWidgetState?.({ expanded: details.open });
+          requestAnimationFrame(notifyHeight);
+        });
+        requestAnimationFrame(notifyHeight);
+      }
+
+      window.addEventListener('openai:set_globals', event => render(event.detail?.globals?.toolOutput));
+      window.addEventListener('message', event => {
+        const message = event.data || {};
+        if (message.method === 'ui/notifications/tool-result') {
+          const params = message.params || {};
+          render(params.structuredContent || params.result?.structuredContent || params.toolResult?.structuredContent);
+        }
+        if (message.id === 1 && message.result) {
+          window.parent.postMessage({ jsonrpc:'2.0', method:'ui/notifications/initialized', params:{} }, '*');
+        }
+      });
+      window.parent.postMessage({
+        jsonrpc:'2.0', id:1, method:'ui/initialize',
+        params:{ protocolVersion:'2025-06-18', capabilities:{}, clientInfo:{ name:'codex-usage-card', version:'0.1.0' } }
+      }, '*');
+      render(window.openai?.toolOutput);
+    })();
+  </script>
+</body>
+</html>

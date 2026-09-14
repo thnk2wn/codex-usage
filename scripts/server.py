@@ -26,7 +26,9 @@ except ImportError:  # pragma: no cover - Python 3.8 fallback
 SERVER_NAME = "codex-usage"
 SERVER_VERSION = "0.1.0"
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
-WIDGET_PATH = PLUGIN_ROOT / "assets" / "dashboard.html"
+DASHBOARD_PATH = PLUGIN_ROOT / "assets" / "dashboard.html"
+CARD_PATH = PLUGIN_ROOT / "assets" / "status-card.html"
+CARD_RESOURCE_URI = "ui://codex-usage/status-card-v1.html"
 _DASHBOARD_SERVER: ThreadingHTTPServer | None = None
 _DASHBOARD_LOCK = threading.Lock()
 _REPORT_CACHE: dict[tuple[str, bool], tuple[float, dict[str, Any]]] = {}
@@ -109,9 +111,12 @@ def _latest_token_event(path_value: str | None) -> dict[str, Any] | None:
         info = payload.get("info") or {}
         total = info.get("total_token_usage")
         if isinstance(total, dict):
+            last = info.get("last_token_usage")
             return {
                 "timestamp": record.get("timestamp"),
                 "usage": _usage_fields(total),
+                "lastUsage": _usage_fields(last) if isinstance(last, dict) else None,
+                "modelContextWindow": int(info.get("model_context_window") or 0),
                 "rateLimits": payload.get("rate_limits"),
             }
     return None
@@ -362,6 +367,12 @@ def current_conversation_usage(arguments: dict[str, Any]) -> dict[str, Any]:
     ]
     child_total = sum(item["totalTokens"] for item in child_items)
     input_tokens = own["inputTokens"]
+    latest_turn = latest.get("lastUsage") if latest else None
+    context_window = int(latest.get("modelContextWindow") or 0) if latest else 0
+    context_input = int((latest_turn or {}).get("inputTokens") or 0)
+    context_percent = (
+        round(context_input * 100 / context_window, 2) if context_window else None
+    )
     return {
         "kind": "current",
         "generatedAt": datetime.now(timezone.utc).isoformat(),
@@ -382,10 +393,78 @@ def current_conversation_usage(arguments: dict[str, Any]) -> dict[str, Any]:
                 else 0
             ),
         },
+        "latestTurn": latest_turn,
+        "context": {
+            "inputTokens": context_input,
+            "windowTokens": context_window,
+            "usedPercent": context_percent,
+        },
         "subagents": child_items,
         "subagentTokens": child_total,
         "combinedTokens": own["totalTokens"] + child_total,
         "limit": limit,
+        "notice": "Raw local token counters are not an authoritative quota ledger.",
+    }
+
+
+def usage_card(arguments: dict[str, Any]) -> dict[str, Any]:
+    current = current_conversation_usage(arguments)
+    dashboard = usage_dashboard({"range": "current_window", "include_internal": False})
+    context_percent = current["context"]["usedPercent"]
+    context_level = "normal"
+    if context_percent is not None and context_percent >= 90:
+        context_level = "critical"
+    elif context_percent is not None and context_percent >= 80:
+        context_level = "warning"
+
+    latest_output = int((current.get("latestTurn") or {}).get("outputTokens") or 0)
+    alerts: list[dict[str, str]] = []
+    if context_level == "critical":
+        alerts.append(
+            {
+                "level": "critical",
+                "title": "Context is nearly full",
+                "detail": "Consider starting a focused follow-up task soon.",
+            }
+        )
+    elif context_level == "warning":
+        alerts.append(
+            {
+                "level": "warning",
+                "title": "Context is getting full",
+                "detail": "The task may compact as work continues.",
+            }
+        )
+    if latest_output >= 12000:
+        alerts.append(
+            {
+                "level": "warning",
+                "title": "Large latest response",
+                "detail": f"The latest response produced {latest_output:,} output tokens.",
+            }
+        )
+
+    return {
+        "kind": "usage_card",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "thread": current["thread"],
+        "sessionUsage": current["ownUsage"],
+        "latestTurn": current["latestTurn"],
+        "context": {**current["context"], "level": context_level},
+        "subagentTokens": current["subagentTokens"],
+        "combinedTokens": current["combinedTokens"],
+        "limit": current["limit"],
+        "windowUsage": dashboard["totals"],
+        "topTasks": [
+            {
+                "id": task["id"],
+                "name": task["name"],
+                "totalTokens": task["totalTokens"],
+                "sharePercent": task["sharePercent"],
+            }
+            for task in dashboard["tasks"][:5]
+        ],
+        "alerts": alerts,
         "notice": "Raw local token counters are not an authoritative quota ledger.",
     }
 
@@ -436,7 +515,19 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
         parsed = urlparse(self.path)
         if parsed.path == "/":
-            self._send(200, "text/html; charset=utf-8", WIDGET_PATH.read_bytes())
+            self._send(200, "text/html; charset=utf-8", DASHBOARD_PATH.read_bytes())
+            return
+        if parsed.path == "/card-preview":
+            query = parse_qs(parsed.query)
+            thread_id = (query.get("thread_id") or [""])[0] or None
+            report = usage_card({"thread_id": thread_id} if thread_id else {})
+            encoded = json.dumps(report, separators=(",", ":")).replace("<", "\\u003c")
+            html = CARD_PATH.read_text(encoding="utf-8").replace(
+                "</head>",
+                f"<script>window.openai={{toolOutput:{encoded}}};</script></head>",
+                1,
+            )
+            self._send(200, "text/html; charset=utf-8", html.encode("utf-8"))
             return
         if parsed.path == "/health":
             self._send(200, "application/json", b'{"ok":true}')
@@ -497,8 +588,14 @@ def open_usage_dashboard(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _tool_descriptor(name: str, description: str, properties: dict[str, Any]) -> dict[str, Any]:
-    return {
+def _tool_descriptor(
+    name: str,
+    description: str,
+    properties: dict[str, Any],
+    *,
+    meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    descriptor = {
         "name": name,
         "description": description,
         "inputSchema": {
@@ -512,9 +609,23 @@ def _tool_descriptor(name: str, description: str, properties: dict[str, Any]) ->
             "openWorldHint": False,
         },
     }
+    if meta:
+        descriptor["_meta"] = meta
+    return descriptor
 
 
 TOOLS = [
+    _tool_descriptor(
+        "show_usage_card",
+        "Render a compact native usage card for this Codex conversation with expandable cross-task details.",
+        {"thread_id": {"type": "string", "description": "Optional explicit Codex thread ID."}},
+        meta={
+            "ui": {"resourceUri": CARD_RESOURCE_URI},
+            "openai/outputTemplate": CARD_RESOURCE_URI,
+            "openai/toolInvocation/invoking": "Reading local usage…",
+            "openai/toolInvocation/invoked": "Usage ready",
+        },
+    ),
     _tool_descriptor(
         "open_usage_dashboard",
         "Start the private localhost usage dashboard and return its URL for a Codex browser panel.",
@@ -560,6 +671,13 @@ def _text_summary(report: dict[str, Any]) -> str:
             f"{report['thread']['name']}: {report['ownUsage']['totalTokens']:,} raw tokens "
             f"in the conversation and {report['subagentTokens']:,} in subagents."
         )
+    if report["kind"] == "usage_card":
+        context = report["context"].get("usedPercent")
+        context_text = f"{context:.0f}% context" if context is not None else "context unavailable"
+        return (
+            f"{report['thread']['name']}: {context_text}, "
+            f"{report['combinedTokens']:,} cumulative raw tokens."
+        )
     tasks = report.get("tasks") or []
     leader = tasks[0] if tasks else None
     lead = f" Top task: {leader['name']} ({leader['totalTokens']:,})." if leader else ""
@@ -580,16 +698,49 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
     if method == "initialize":
         return {
             "protocolVersion": params.get("protocolVersion", "2025-06-18"),
-            "capabilities": {"tools": {}},
+            "capabilities": {"resources": {}, "tools": {}},
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
         }
     if method == "ping":
         return {}
     if method == "tools/list":
         return {"tools": TOOLS}
+    if method == "resources/list":
+        return {
+            "resources": [
+                {
+                    "uri": CARD_RESOURCE_URI,
+                    "name": "Codex Usage status card",
+                    "description": "Compact expandable local Codex usage status.",
+                    "mimeType": "text/html;profile=mcp-app",
+                }
+            ]
+        }
+    if method == "resources/templates/list":
+        return {"resourceTemplates": []}
+    if method == "resources/read":
+        uri = params.get("uri")
+        if uri != CARD_RESOURCE_URI:
+            raise RuntimeError(f"Unknown resource: {uri}")
+        return {
+            "contents": [
+                {
+                    "uri": CARD_RESOURCE_URI,
+                    "mimeType": "text/html;profile=mcp-app",
+                    "text": CARD_PATH.read_text(encoding="utf-8"),
+                    "_meta": {
+                        "ui": {"prefersBorder": False},
+                        "openai/widgetDescription": "Compact local Codex usage status with expandable task details.",
+                        "openai/widgetPrefersBorder": False,
+                    },
+                }
+            ]
+        }
     if method == "tools/call":
         name = params.get("name")
         arguments = params.get("arguments") or {}
+        if name == "show_usage_card":
+            return _tool_result(usage_card(arguments))
         if name == "open_usage_dashboard":
             return _tool_result(open_usage_dashboard(arguments))
         if name == "current_conversation_usage":
@@ -627,7 +778,8 @@ def _self_test() -> None:
     report = usage_dashboard({"range": "current_window"})
     output = {
         "database": "ok",
-        "widget": WIDGET_PATH.exists(),
+        "dashboard": DASHBOARD_PATH.exists(),
+        "card": CARD_PATH.exists(),
         "limit": limit,
         "visibleTasks": len(report["tasks"]),
         "sources": len(report["sources"]),
@@ -636,8 +788,13 @@ def _self_test() -> None:
     current_id = os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID")
     if current_id:
         current = current_conversation_usage({"thread_id": current_id})
+        card = usage_card({"thread_id": current_id})
         output["currentThread"] = current["thread"]["name"]
         output["currentTokens"] = current["combinedTokens"]
+        output["contextPercent"] = card["context"]["usedPercent"]
+        output["cardResource"] = _handle(
+            "resources/read", {"uri": CARD_RESOURCE_URI}
+        )["contents"][0]["mimeType"]
     panel = open_usage_dashboard({"thread_id": current_id, "range": "current_window"})
     with urlopen(panel["dashboardUrl"].replace("/?", "/health?"), timeout=5) as response:
         output["panelHealth"] = json.loads(response.read().decode("utf-8"))["ok"]
