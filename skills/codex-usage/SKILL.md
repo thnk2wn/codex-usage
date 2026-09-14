@@ -34,7 +34,6 @@ Call `usage_dashboard` for cross-task questions. Choose the closest range:
 
 - `current_window` for the active Codex limit window;
 - `today` for local midnight through now;
-- `since_friday` for the most recent Friday at local midnight;
 - `last_7_days` or `last_30_days` for rolling ranges.
 
 Set `include_internal` only when the user explicitly wants internal approval/guardrail activity included in task rows. Source totals remain visible so the user can see that supporting activity exists.

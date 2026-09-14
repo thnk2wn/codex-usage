@@ -19,7 +19,7 @@
     "defaultPrompt": [
       "Show usage for this conversation.",
       "Show usage across my current Codex window.",
-      "Where has my Codex usage gone since Friday?"
+      "Which tasks used the most Codex capacity this week?"
     ],
     "brandColor": "#0F766E"
   },

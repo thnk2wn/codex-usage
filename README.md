@@ -8,7 +8,7 @@ It is designed for personal installation; publishing it to a shared marketplace 
 
 - `open_usage_dashboard` starts a private localhost dashboard intended for a persistent Codex right-hand browser panel. It shows the active conversation and the cross-task view together and refreshes automatically.
 - `current_conversation_usage` returns a concise snapshot for the active conversation when a panel is not needed.
-- `usage_dashboard` returns structured cross-task data for the current limit window, today, since Friday, or rolling 7/30-day ranges.
+- `usage_dashboard` returns structured cross-task data for the current limit window, today, or rolling 7/30-day ranges.
 
 ## Data and privacy
 

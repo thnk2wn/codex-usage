@@ -160,12 +160,6 @@ def _range_bounds(range_name: str, limit: dict[str, Any] | None) -> tuple[int, i
     if range_name == "today":
         start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
         return int(start.timestamp()), int(now.timestamp()), "Today"
-    if range_name == "since_friday":
-        days_since_friday = (local_now.weekday() - 4) % 7
-        start = (local_now - timedelta(days=days_since_friday)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        return int(start.timestamp()), int(now.timestamp()), "Since Friday"
     days = 30 if range_name == "last_30_days" else 7
     return (
         int((now - timedelta(days=days)).timestamp()),
@@ -528,7 +522,7 @@ TOOLS = [
             "thread_id": {"type": "string", "description": "Optional explicit Codex thread ID."},
             "range": {
                 "type": "string",
-                "enum": ["current_window", "today", "since_friday", "last_7_days", "last_30_days"],
+                "enum": ["current_window", "today", "last_7_days", "last_30_days"],
                 "default": "current_window",
             },
             "include_internal": {"type": "boolean", "default": False},
@@ -545,7 +539,7 @@ TOOLS = [
         {
             "range": {
                 "type": "string",
-                "enum": ["current_window", "today", "since_friday", "last_7_days", "last_30_days"],
+                "enum": ["current_window", "today", "last_7_days", "last_30_days"],
                 "default": "current_window",
             },
             "include_internal": {
