@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex Usage</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f3f6f5;
+      --panel: rgba(255, 255, 255, .92);
+      --raised: #fff;
+      --text: #14201e;
+      --muted: #68736f;
+      --line: #dce4e1;
+      --accent: #0f766e;
+      --accent-2: #14b8a6;
+      --accent-soft: #d9efeb;
+      --warn: #a16207;
+      --shadow: 0 16px 48px rgba(17, 47, 42, .09);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0e1413;
+        --panel: rgba(23, 31, 30, .95);
+        --raised: #1b2523;
+        --text: #eef5f3;
+        --muted: #9da9a5;
+        --line: #34413e;
+        --accent: #5dd5c5;
+        --accent-2: #2dd4bf;
+        --accent-soft: #173d38;
+        --warn: #f0bf5b;
+        --shadow: 0 18px 54px rgba(0, 0, 0, .28);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 330px;
+      background:
+        radial-gradient(circle at 0 0, color-mix(in srgb, var(--accent) 14%, transparent), transparent 32%),
+        var(--bg);
+      color: var(--text);
+      font: 14px/1.45 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    main { max-width: 1180px; margin: 0 auto; padding: 18px; }
+    .shell {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 22px 24px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand { display: flex; gap: 12px; align-items: center; }
+    .mark {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      color: white;
+      background: linear-gradient(145deg, #0f766e, #14b8a6);
+      font-size: 18px;
+      font-weight: 850;
+      box-shadow: 0 7px 18px color-mix(in srgb, var(--accent) 28%, transparent);
+    }
+    h1 { margin: 0; font-size: 20px; letter-spacing: -.025em; }
+    .subtitle, .muted { color: var(--muted); }
+    .subtitle { font-size: 12px; margin-top: 1px; }
+    .header-actions { display: flex; align-items: center; gap: 9px; }
+    .live { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-2) 14%, transparent); }
+    .icon-button, .filter {
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: transparent;
+      cursor: pointer;
+      transition: border-color .15s, background .15s, transform .15s;
+    }
+    .icon-button { padding: 7px 10px; }
+    .icon-button:hover, .filter:hover { border-color: var(--accent); }
+    .icon-button:active, .filter:active { transform: translateY(1px); }
+    .content { padding: 20px 24px 24px; }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 148px;
+      align-items: center;
+      gap: 18px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: color-mix(in srgb, var(--raised) 82%, transparent);
+    }
+    .eyebrow { color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    h2 { margin: 4px 0 4px; font-size: clamp(19px, 3vw, 27px); line-height: 1.15; letter-spacing: -.035em; }
+    .meta { color: var(--muted); font-size: 11px; }
+    .meter {
+      position: relative;
+      width: 126px;
+      height: 126px;
+      margin: auto;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: conic-gradient(var(--accent) calc(var(--value) * 1%), var(--line) 0);
+    }
+    .meter::before { content: ""; position: absolute; inset: 12px; border-radius: 50%; background: var(--raised); }
+    .meter span { position: relative; text-align: center; font-size: 25px; font-weight: 820; letter-spacing: -.04em; }
+    .meter small { display: block; color: var(--muted); font-size: 9px; font-weight: 650; letter-spacing: 0; }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; margin-top: 15px; }
+    .metric { min-height: 77px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+    .metric strong { display: block; margin: 2px 0; font-size: 20px; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+    .label { color: var(--muted); font-size: 10px; }
+    .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin: 24px 0 10px; }
+    .section-head h3 { margin: 0; font-size: 14px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+    .filter { padding: 6px 10px; color: var(--muted); font-size: 11px; }
+    .filter.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 750; }
+    .check { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 11px; margin-left: 4px; }
+    .check input { accent-color: var(--accent); }
+    .sources { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
+    .source { padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; }
+    .source b { color: var(--text); margin-left: 5px; }
+    .table { border-top: 1px solid var(--line); }
+    details { border-bottom: 1px solid var(--line); }
+    summary {
+      list-style: none;
+      display: grid;
+      grid-template-columns: minmax(220px, 2fr) minmax(80px, .7fr) minmax(72px, .55fr) minmax(70px, .5fr);
+      gap: 12px;
+      align-items: center;
+      padding: 12px 2px;
+      cursor: pointer;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary:hover .task-name { color: var(--accent); }
+    .task-name { font-weight: 720; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color .15s; }
+    .task-bar { height: 4px; margin-top: 6px; overflow: hidden; border-radius: 99px; background: var(--line); }
+    .task-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+    .number { text-align: right; font-variant-numeric: tabular-nums; }
+    .number b { display: block; }
+    .detail {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      padding: 0 2px 13px;
+    }
+    .detail > div { padding: 9px; border-radius: 9px; background: var(--accent-soft); }
+    .detail code { font-size: 9px; overflow-wrap: anywhere; color: var(--accent); }
+    .notice { margin-top: 16px; color: var(--muted); font-size: 10px; }
+    .empty, .error { padding: 55px 24px; text-align: center; color: var(--muted); }
+    .error { color: var(--warn); }
+    .spin { animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 700px) {
+      main { padding: 8px; }
+      header, .content { padding-left: 16px; padding-right: 16px; }
+      .live { display: none; }
+      .hero { grid-template-columns: 1fr 105px; padding: 14px; }
+      .meter { width: 96px; height: 96px; }
+      .meter span { font-size: 20px; }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      summary { grid-template-columns: minmax(0, 1fr) 76px; }
+      summary > :nth-child(3), summary > :nth-child(4) { display: none; }
+      .detail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .section-head { display: block; }
+      .controls { margin-top: 9px; }
+    }
+  </style>
+</head>
+<body>
+  <main><div class="shell" id="app"><div class="empty">Loading local Codex usage…</div></div></main>
+  <script>
+    const app = document.getElementById('app');
+    const query = new URLSearchParams(location.search);
+    const state = {
+      range: query.get('range') || 'current_window',
+      includeInternal: query.get('include_internal') === 'true',
+      threadId: query.get('thread_id') || '',
+      loading: false,
+      data: null,
+    };
+    const ranges = [
+      ['current_window', 'Current window'],
+      ['today', 'Today'],
+      ['since_friday', 'Since Friday'],
+      ['last_7_days', '7 days'],
+      ['last_30_days', '30 days'],
+    ];
+    const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+    const compact = n => new Intl.NumberFormat(undefined, {notation:'compact', maximumFractionDigits:1}).format(Number(n || 0));
+    const percent = n => `${Number(n || 0).toFixed(Number(n || 0) < 10 ? 1 : 0)}%`;
+    const when = value => value ? new Intl.DateTimeFormat(undefined, {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}).format(new Date(value)) : '—';
+    const metric = (label, value, detail='') => `<div class="metric"><span class="label">${esc(label)}</span><strong>${esc(value)}</strong><span class="label">${esc(detail)}</span></div>`;
+
+    function meter(limit) {
+      if (!limit || limit.usedPercent == null) return '<div></div>';
+      return `<div class="meter" style="--value:${Math.min(100, Number(limit.usedPercent))}" aria-label="${esc(limit.usedPercent)} percent of aggregate Codex usage used"><span>${esc(limit.usedPercent)}%<small>resets ${esc(when(limit.resetsAt * 1000))}</small></span></div>`;
+    }
+
+    function currentSection(current, error) {
+      if (!current) return `<section class="hero"><div><div class="eyebrow">Current conversation</div><h2>Unavailable</h2><div class="meta">${esc(error || 'No thread was selected.')}</div></div></section>`;
+      const usage = current.ownUsage || {};
+      const thread = current.thread || {};
+      return `<section><div class="hero"><div><div class="eyebrow">Current conversation</div><h2>${esc(thread.name)}</h2><div class="meta">${esc(thread.project || 'projectless')} · ${esc(thread.model || 'unknown model')} · ${esc(thread.reasoningEffort || 'default')} reasoning</div><div class="metrics">${metric('Conversation', compact(usage.totalTokens), 'raw tokens')}${metric('Cached input', percent(usage.cachedPercent), compact(usage.cachedInputTokens))}${metric('Subagents', compact(current.subagentTokens), `${(current.subagents || []).length} child tasks`)}${metric('Combined', compact(current.combinedTokens), 'conversation + children')}</div></div>${meter(current.limit)}</div></section>`;
+    }
+
+    function controls() {
+      const buttons = ranges.map(([value, label]) => `<button class="filter ${state.range === value ? 'active' : ''}" data-range="${value}">${esc(label)}</button>`).join('');
+      return `<div class="controls">${buttons}<label class="check"><input id="internal" type="checkbox" ${state.includeInternal ? 'checked' : ''}> internal rows</label></div>`;
+    }
+
+    function taskRows(tasks) {
+      if (!tasks.length) return '<div class="empty">No local usage in this range.</div>';
+      const max = Math.max(...tasks.map(task => Number(task.totalTokens || 0)), 1);
+      return tasks.map(task => `<details><summary><div><div class="task-name">${esc(task.name)}</div><div class="meta">${esc(task.source)} · ${esc(task.project || 'projectless')} · ${esc(task.model || 'unknown')}</div><div class="task-bar"><i style="width:${Math.max(1, Number(task.totalTokens || 0) * 100 / max)}%"></i></div></div><div class="number"><b>${compact(task.totalTokens)}</b><span class="label">${percent(task.sharePercent)} visible</span></div><div class="number"><b>${percent(task.cachedPercent)}</b><span class="label">cached</span></div><div class="number"><b>${compact(task.responses)}</b><span class="label">responses</span></div></summary><div class="detail"><div><span class="label">Input</span><br><b>${compact(task.inputTokens)}</b></div><div><span class="label">Cached input</span><br><b>${compact(task.cachedInputTokens)}</b></div><div><span class="label">Output</span><br><b>${compact(task.outputTokens)}</b></div><div><span class="label">Task ID</span><br><code>${esc(task.id)}</code></div></div></details>`).join('');
+    }
+
+    function render() {
+      if (!state.data) return;
+      const {current, currentError, dashboard} = state.data;
+      const sources = (dashboard.sources || []).map(source => `<span class="source">${esc(source.source)} <b>${compact(source.totalTokens)}</b></span>`).join('');
+      app.innerHTML = `<header><div class="brand"><div class="mark">C</div><div><h1>Codex Usage</h1><div class="subtitle">Private local attribution · auto-refreshes every 20 seconds</div></div></div><div class="header-actions"><span class="live"><i class="dot"></i> live</span><button id="refresh" class="icon-button" title="Refresh now" aria-label="Refresh now">↻</button></div></header><div class="content">${currentSection(current, currentError)}<div class="section-head"><div><h3>Across tasks</h3><div class="meta">${esc(dashboard.rangeLabel)} · ${esc(when(dashboard.startAt))} → ${esc(when(dashboard.endAt))}</div></div>${controls()}</div><div class="metrics">${metric('Recorded', compact(dashboard.totals?.totalTokens), 'all local sources')}${metric('Cached input', percent(dashboard.totals?.cachedPercent), compact(dashboard.totals?.cachedInputTokens))}${metric('Visible tasks', (dashboard.tasks || []).length, dashboard.internalIncluded ? 'including internal' : 'internal rows hidden')}${metric('Aggregate limit', dashboard.limit?.usedPercent == null ? '—' : percent(dashboard.limit.usedPercent), dashboard.limit ? `resets ${when(dashboard.limit.resetsAt * 1000)}` : 'not observed')}</div><div class="section-head"><h3>Activity by source</h3><span class="label">raw processed tokens</span></div><div class="sources">${sources}</div><div class="table">${taskRows(dashboard.tasks || [])}</div><div class="notice">${esc(dashboard.notice)} Cached input, model choice, reasoning, subagents, automations, and internal reviews may be weighted differently by the subscription limit.</div></div>`;
+      document.querySelectorAll('[data-range]').forEach(button => button.addEventListener('click', () => {
+        state.range = button.dataset.range;
+        updateLocation();
+        load();
+      }));
+      document.getElementById('internal').addEventListener('change', event => {
+        state.includeInternal = event.target.checked;
+        updateLocation();
+        load();
+      });
+      document.getElementById('refresh').addEventListener('click', load);
+    }
+
+    function updateLocation() {
+      const next = new URLSearchParams({range: state.range, include_internal: String(state.includeInternal)});
+      if (state.threadId) next.set('thread_id', state.threadId);
+      history.replaceState(null, '', `?${next}`);
+    }
+
+    async function load() {
+      if (state.loading) return;
+      state.loading = true;
+      const refresh = document.getElementById('refresh');
+      if (refresh) refresh.classList.add('spin');
+      const params = new URLSearchParams({range: state.range, include_internal: String(state.includeInternal)});
+      if (state.threadId) params.set('thread_id', state.threadId);
+      try {
+        const response = await fetch(`/api/report?${params}`, {cache: 'no-store'});
+        const data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
+        state.data = data;
+        render();
+      } catch (error) {
+        app.innerHTML = `<div class="error"><b>Could not load local usage</b><br>${esc(error.message)}</div>`;
+      } finally {
+        state.loading = false;
+        const button = document.getElementById('refresh');
+        if (button) button.classList.remove('spin');
+      }
+    }
+
+    load();
+    setInterval(load, 20000);
+  </script>
+</body>
+</html>

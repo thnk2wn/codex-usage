@@ -1,0 +1,661 @@
+#!/usr/bin/env python3
+"""Read-only MCP server for local Codex usage attribution."""
+
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+import sys
+import threading
+import time
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any, Iterable
+from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.request import urlopen
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover - Python 3.8 fallback
+    ZoneInfo = None  # type: ignore[assignment]
+
+
+SERVER_NAME = "codex-usage"
+SERVER_VERSION = "0.1.0"
+PLUGIN_ROOT = Path(__file__).resolve().parent.parent
+WIDGET_PATH = PLUGIN_ROOT / "assets" / "dashboard.html"
+_DASHBOARD_SERVER: ThreadingHTTPServer | None = None
+_DASHBOARD_LOCK = threading.Lock()
+_REPORT_CACHE: dict[tuple[str, bool], tuple[float, dict[str, Any]]] = {}
+_REPORT_CACHE_LOCK = threading.Lock()
+_REPORT_CACHE_TTL_SECONDS = 10
+
+
+def _codex_home() -> Path:
+    configured = os.environ.get("CODEX_HOME")
+    return Path(configured).expanduser() if configured else Path.home() / ".codex"
+
+
+def _local_timezone():
+    name = os.environ.get("TZ", "America/New_York")
+    if ZoneInfo is not None:
+        try:
+            return ZoneInfo(name)
+        except Exception:
+            pass
+    return datetime.now().astimezone().tzinfo or timezone.utc
+
+
+def _connect() -> sqlite3.Connection:
+    database = _codex_home() / "state_5.sqlite"
+    if not database.exists():
+        raise RuntimeError(f"Codex state database was not found at {database}")
+    connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=5)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def _event_epoch(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _reverse_lines(path: Path, max_bytes: int = 4 * 1024 * 1024) -> Iterable[str]:
+    """Yield recent lines newest-first without loading a large rollout."""
+    with path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        end = handle.tell()
+        start = max(0, end - max_bytes)
+        handle.seek(start)
+        data = handle.read()
+    if start:
+        first_newline = data.find(b"\n")
+        data = data[first_newline + 1 :] if first_newline >= 0 else b""
+    for line in reversed(data.splitlines()):
+        yield line.decode("utf-8", errors="replace")
+
+
+def _usage_fields(payload: dict[str, Any]) -> dict[str, int]:
+    return {
+        "inputTokens": int(payload.get("input_tokens") or 0),
+        "cachedInputTokens": int(payload.get("cached_input_tokens") or 0),
+        "outputTokens": int(payload.get("output_tokens") or 0),
+        "reasoningOutputTokens": int(payload.get("reasoning_output_tokens") or 0),
+        "totalTokens": int(payload.get("total_tokens") or 0),
+    }
+
+
+def _latest_token_event(path_value: str | None) -> dict[str, Any] | None:
+    if not path_value:
+        return None
+    path = Path(path_value)
+    if not path.is_file():
+        return None
+    for line in _reverse_lines(path):
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        payload = record.get("payload") or {}
+        if record.get("type") != "event_msg" or payload.get("type") != "token_count":
+            continue
+        info = payload.get("info") or {}
+        total = info.get("total_token_usage")
+        if isinstance(total, dict):
+            return {
+                "timestamp": record.get("timestamp"),
+                "usage": _usage_fields(total),
+                "rateLimits": payload.get("rate_limits"),
+            }
+    return None
+
+
+def _latest_rate_limit(connection: sqlite3.Connection) -> dict[str, Any] | None:
+    rows = connection.execute(
+        "SELECT rollout_path FROM threads ORDER BY updated_at DESC LIMIT 40"
+    ).fetchall()
+    candidates: list[tuple[float, dict[str, Any]]] = []
+    for row in rows:
+        event = _latest_token_event(row["rollout_path"])
+        if not event or not event.get("rateLimits"):
+            continue
+        epoch = _event_epoch(event.get("timestamp"))
+        if epoch is not None:
+            candidates.append((epoch, event))
+    if not candidates:
+        return None
+    event = max(candidates, key=lambda item: item[0])[1]
+    limits = event.get("rateLimits") or {}
+    primary = limits.get("primary") or {}
+    window_minutes = primary.get("window_minutes") or primary.get("windowDurationMins")
+    resets_at = primary.get("resets_at") or primary.get("resetsAt")
+    used_percent = primary.get("used_percent")
+    if used_percent is None:
+        used_percent = primary.get("usedPercent")
+    if not window_minutes or not resets_at:
+        return None
+    start_at = int(resets_at) - int(window_minutes) * 60
+    return {
+        "usedPercent": float(used_percent) if used_percent is not None else None,
+        "windowMinutes": int(window_minutes),
+        "startAt": start_at,
+        "resetsAt": int(resets_at),
+        "planType": limits.get("plan_type") or limits.get("planType"),
+        "observedAt": event.get("timestamp"),
+    }
+
+
+def _range_bounds(range_name: str, limit: dict[str, Any] | None) -> tuple[int, int, str]:
+    now = datetime.now(timezone.utc)
+    local_now = now.astimezone(_local_timezone())
+    if range_name == "current_window" and limit:
+        return int(limit["startAt"]), int(now.timestamp()), "Current Codex window"
+    if range_name == "today":
+        start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return int(start.timestamp()), int(now.timestamp()), "Today"
+    if range_name == "since_friday":
+        days_since_friday = (local_now.weekday() - 4) % 7
+        start = (local_now - timedelta(days=days_since_friday)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        return int(start.timestamp()), int(now.timestamp()), "Since Friday"
+    days = 30 if range_name == "last_30_days" else 7
+    return (
+        int((now - timedelta(days=days)).timestamp()),
+        int(now.timestamp()),
+        f"Last {days} days",
+    )
+
+
+def _sum_rollout(path_value: str, start_at: int, end_at: int) -> dict[str, int]:
+    totals = {
+        "inputTokens": 0,
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "reasoningOutputTokens": 0,
+        "totalTokens": 0,
+        "responses": 0,
+    }
+    path = Path(path_value)
+    if not path.is_file():
+        return totals
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            payload = record.get("payload") or {}
+            if record.get("type") != "event_msg" or payload.get("type") != "token_count":
+                continue
+            epoch = _event_epoch(record.get("timestamp"))
+            if epoch is None or epoch < start_at or epoch > end_at:
+                continue
+            last = (payload.get("info") or {}).get("last_token_usage")
+            if not isinstance(last, dict):
+                continue
+            values = _usage_fields(last)
+            for key, value in values.items():
+                totals[key] += value
+            totals["responses"] += 1
+    return totals
+
+
+def _task_name(row: sqlite3.Row) -> str:
+    name = (row["name"] or "").strip()
+    if name:
+        return name
+    parent_name = (row["parent_name"] or "").strip()
+    if row["thread_source"] == "subagent" and parent_name:
+        return f"Subagent · {parent_name}"
+    first = " ".join((row["first_user_message"] or "").split())
+    if first:
+        return first[:100] + ("…" if len(first) > 100 else "")
+    return f"Untitled {row['thread_source'] or 'task'}"
+
+
+def _iso_local(epoch: int) -> str:
+    return datetime.fromtimestamp(epoch, _local_timezone()).isoformat()
+
+
+def usage_dashboard(arguments: dict[str, Any]) -> dict[str, Any]:
+    range_name = arguments.get("range") or "current_window"
+    include_internal = bool(arguments.get("include_internal", False))
+    with _connect() as connection:
+        limit = _latest_rate_limit(connection)
+        start_at, end_at, label = _range_bounds(range_name, limit)
+        rows = connection.execute(
+            """
+            SELECT t.id, t.name, t.first_user_message, t.thread_source, t.model,
+                   t.reasoning_effort, t.cwd, t.created_at, t.rollout_path,
+                   edge.parent_thread_id, parent.name AS parent_name
+            FROM threads AS t
+            LEFT JOIN thread_spawn_edges AS edge ON edge.child_thread_id = t.id
+            LEFT JOIN threads AS parent ON parent.id = edge.parent_thread_id
+            WHERE t.updated_at >= ?
+            ORDER BY t.updated_at DESC
+            """,
+            (start_at,),
+        ).fetchall()
+
+    items: list[dict[str, Any]] = []
+    source_totals: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"totalTokens": 0, "responses": 0, "tasks": 0}
+    )
+    overall = 0
+    overall_cached = 0
+    for row in rows:
+        usage = _sum_rollout(row["rollout_path"], start_at, end_at)
+        if usage["totalTokens"] <= 0:
+            continue
+        source = row["thread_source"] or "unknown"
+        source_totals[source]["totalTokens"] += usage["totalTokens"]
+        source_totals[source]["responses"] += usage["responses"]
+        source_totals[source]["tasks"] += 1
+        overall += usage["totalTokens"]
+        overall_cached += usage["cachedInputTokens"]
+        if source == "guardian_review" and not include_internal:
+            continue
+        items.append(
+            {
+                "id": row["id"],
+                "name": _task_name(row),
+                "source": source,
+                "model": row["model"],
+                "reasoningEffort": row["reasoning_effort"],
+                "project": Path(row["cwd"]).name if row["cwd"] else None,
+                "createdAt": _iso_local(int(row["created_at"])),
+                "parentThreadId": row["parent_thread_id"],
+                **usage,
+            }
+        )
+    items.sort(key=lambda item: item["totalTokens"], reverse=True)
+    visible_total = sum(item["totalTokens"] for item in items)
+    for item in items:
+        item["sharePercent"] = (
+            round(item["totalTokens"] * 100 / visible_total, 2) if visible_total else 0
+        )
+        input_tokens = item["inputTokens"]
+        item["cachedPercent"] = (
+            round(item["cachedInputTokens"] * 100 / input_tokens, 2)
+            if input_tokens
+            else 0
+        )
+    return {
+        "kind": "dashboard",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "range": range_name,
+        "rangeLabel": label,
+        "startAt": _iso_local(start_at),
+        "endAt": _iso_local(end_at),
+        "limit": limit,
+        "totals": {
+            "totalTokens": overall,
+            "cachedInputTokens": overall_cached,
+            "cachedPercent": round(overall_cached * 100 / overall, 2) if overall else 0,
+            "visibleTokens": visible_total,
+        },
+        "sources": [
+            {"source": source, **values}
+            for source, values in sorted(
+                source_totals.items(),
+                key=lambda item: item[1]["totalTokens"],
+                reverse=True,
+            )
+        ],
+        "tasks": items[:100],
+        "internalIncluded": include_internal,
+        "notice": "Raw local token counters are not an authoritative quota ledger.",
+    }
+
+
+def current_conversation_usage(arguments: dict[str, Any]) -> dict[str, Any]:
+    thread_id = (
+        arguments.get("thread_id")
+        or os.environ.get("CODEX_THREAD_ID")
+        or os.environ.get("CODEX_SESSION_ID")
+    )
+    if not thread_id:
+        raise RuntimeError("The current Codex thread ID is unavailable; pass thread_id explicitly.")
+    with _connect() as connection:
+        row = connection.execute(
+            """
+            SELECT id, name, first_user_message, thread_source, model, reasoning_effort,
+                   cwd, created_at, rollout_path, tokens_used, NULL AS parent_name
+            FROM threads WHERE id = ?
+            """,
+            (thread_id,),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError(f"Codex thread {thread_id} was not found in local state.")
+        children = connection.execute(
+            """
+            SELECT child.id, child.name, child.tokens_used, child.model,
+                   child.reasoning_effort, child.thread_source
+            FROM thread_spawn_edges AS edge
+            JOIN threads AS child ON child.id = edge.child_thread_id
+            WHERE edge.parent_thread_id = ?
+            ORDER BY child.tokens_used DESC
+            """,
+            (thread_id,),
+        ).fetchall()
+        limit = _latest_rate_limit(connection)
+    latest = _latest_token_event(row["rollout_path"])
+    own = latest["usage"] if latest else {
+        "inputTokens": int(row["tokens_used"] or 0),
+        "cachedInputTokens": 0,
+        "outputTokens": 0,
+        "reasoningOutputTokens": 0,
+        "totalTokens": int(row["tokens_used"] or 0),
+    }
+    child_items = [
+        {
+            "id": child["id"],
+            "name": child["name"] or "Subagent",
+            "totalTokens": int(child["tokens_used"] or 0),
+            "model": child["model"],
+            "reasoningEffort": child["reasoning_effort"],
+            "source": child["thread_source"],
+        }
+        for child in children
+    ]
+    child_total = sum(item["totalTokens"] for item in child_items)
+    input_tokens = own["inputTokens"]
+    return {
+        "kind": "current",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "thread": {
+            "id": row["id"],
+            "name": _task_name(row),
+            "source": row["thread_source"],
+            "model": row["model"],
+            "reasoningEffort": row["reasoning_effort"],
+            "project": Path(row["cwd"]).name if row["cwd"] else None,
+            "createdAt": _iso_local(int(row["created_at"])),
+        },
+        "ownUsage": {
+            **own,
+            "cachedPercent": (
+                round(own["cachedInputTokens"] * 100 / input_tokens, 2)
+                if input_tokens
+                else 0
+            ),
+        },
+        "subagents": child_items,
+        "subagentTokens": child_total,
+        "combinedTokens": own["totalTokens"] + child_total,
+        "limit": limit,
+        "notice": "Raw local token counters are not an authoritative quota ledger.",
+    }
+
+
+def _dashboard_payload(query: dict[str, list[str]]) -> dict[str, Any]:
+    range_name = (query.get("range") or ["current_window"])[0]
+    include_internal = (query.get("include_internal") or ["false"])[0].lower() == "true"
+    thread_id = (query.get("thread_id") or [""])[0] or None
+    cache_key = (range_name, include_internal)
+    now = time.monotonic()
+    with _REPORT_CACHE_LOCK:
+        cached = _REPORT_CACHE.get(cache_key)
+    if cached is not None and now - cached[0] < _REPORT_CACHE_TTL_SECONDS:
+        dashboard = cached[1]
+    else:
+        dashboard = usage_dashboard(
+            {"range": range_name, "include_internal": include_internal}
+        )
+        with _REPORT_CACHE_LOCK:
+            _REPORT_CACHE[cache_key] = (now, dashboard)
+    current = None
+    current_error = None
+    try:
+        current = current_conversation_usage(
+            {"thread_id": thread_id} if thread_id else {}
+        )
+    except Exception as exc:
+        current_error = str(exc)
+    return {
+        "current": current,
+        "currentError": current_error,
+        "dashboard": dashboard,
+    }
+
+
+class _DashboardHandler(BaseHTTPRequestHandler):
+    server_version = "CodexUsage/0.1"
+
+    def _send(self, status: int, content_type: str, body: bytes) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        parsed = urlparse(self.path)
+        if parsed.path == "/":
+            self._send(200, "text/html; charset=utf-8", WIDGET_PATH.read_bytes())
+            return
+        if parsed.path == "/health":
+            self._send(200, "application/json", b'{"ok":true}')
+            return
+        if parsed.path == "/api/report":
+            try:
+                payload = _dashboard_payload(parse_qs(parsed.query))
+                body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+                self._send(200, "application/json", body)
+            except Exception as exc:
+                body = json.dumps({"error": str(exc)}).encode("utf-8")
+                self._send(500, "application/json", body)
+            return
+        self._send(404, "text/plain; charset=utf-8", b"Not found")
+
+    def log_message(self, _format: str, *_args: Any) -> None:
+        return
+
+
+def _ensure_dashboard_server() -> ThreadingHTTPServer:
+    global _DASHBOARD_SERVER
+    with _DASHBOARD_LOCK:
+        if _DASHBOARD_SERVER is not None:
+            return _DASHBOARD_SERVER
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _DashboardHandler)
+        server.daemon_threads = True
+        thread = threading.Thread(
+            target=server.serve_forever,
+            name="codex-usage-dashboard",
+            daemon=True,
+        )
+        thread.start()
+        _DASHBOARD_SERVER = server
+        return server
+
+
+def open_usage_dashboard(arguments: dict[str, Any]) -> dict[str, Any]:
+    thread_id = (
+        arguments.get("thread_id")
+        or os.environ.get("CODEX_THREAD_ID")
+        or os.environ.get("CODEX_SESSION_ID")
+        or ""
+    )
+    query = {
+        "range": arguments.get("range") or "current_window",
+        "include_internal": "true" if arguments.get("include_internal") else "false",
+    }
+    if thread_id:
+        query["thread_id"] = thread_id
+    server = _ensure_dashboard_server()
+    host, port = server.server_address[:2]
+    return {
+        "kind": "panel",
+        "dashboardUrl": f"http://{host}:{port}/?{urlencode(query)}",
+        "threadId": thread_id or None,
+        "range": query["range"],
+        "notice": "This localhost dashboard remains available while the Codex task is open.",
+    }
+
+
+def _tool_descriptor(name: str, description: str, properties: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": name,
+        "description": description,
+        "inputSchema": {
+            "type": "object",
+            "properties": properties,
+            "additionalProperties": False,
+        },
+        "annotations": {
+            "readOnlyHint": True,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    }
+
+
+TOOLS = [
+    _tool_descriptor(
+        "open_usage_dashboard",
+        "Start the private localhost usage dashboard and return its URL for a Codex browser panel.",
+        {
+            "thread_id": {"type": "string", "description": "Optional explicit Codex thread ID."},
+            "range": {
+                "type": "string",
+                "enum": ["current_window", "today", "since_friday", "last_7_days", "last_30_days"],
+                "default": "current_window",
+            },
+            "include_internal": {"type": "boolean", "default": False},
+        },
+    ),
+    _tool_descriptor(
+        "current_conversation_usage",
+        "Show raw local token usage for the current Codex conversation and its subagents.",
+        {"thread_id": {"type": "string", "description": "Optional explicit Codex thread ID."}},
+    ),
+    _tool_descriptor(
+        "usage_dashboard",
+        "Show an interactive cross-task dashboard of locally recorded Codex usage.",
+        {
+            "range": {
+                "type": "string",
+                "enum": ["current_window", "today", "since_friday", "last_7_days", "last_30_days"],
+                "default": "current_window",
+            },
+            "include_internal": {
+                "type": "boolean",
+                "default": False,
+                "description": "Include internal approval-review tasks in task rows.",
+            },
+        },
+    ),
+]
+
+
+def _text_summary(report: dict[str, Any]) -> str:
+    if report["kind"] == "panel":
+        return f"Open the private Codex Usage dashboard: {report['dashboardUrl']}"
+    if report["kind"] == "current":
+        return (
+            f"{report['thread']['name']}: {report['ownUsage']['totalTokens']:,} raw tokens "
+            f"in the conversation and {report['subagentTokens']:,} in subagents."
+        )
+    tasks = report.get("tasks") or []
+    leader = tasks[0] if tasks else None
+    lead = f" Top task: {leader['name']} ({leader['totalTokens']:,})." if leader else ""
+    return (
+        f"{report['rangeLabel']}: {report['totals']['totalTokens']:,} locally recorded raw tokens "
+        f"across {len(tasks)} visible tasks.{lead}"
+    )
+
+
+def _tool_result(report: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "content": [{"type": "text", "text": _text_summary(report)}],
+        "structuredContent": report,
+    }
+
+
+def _handle(method: str, params: dict[str, Any]) -> Any:
+    if method == "initialize":
+        return {
+            "protocolVersion": params.get("protocolVersion", "2025-06-18"),
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+        }
+    if method == "ping":
+        return {}
+    if method == "tools/list":
+        return {"tools": TOOLS}
+    if method == "tools/call":
+        name = params.get("name")
+        arguments = params.get("arguments") or {}
+        if name == "open_usage_dashboard":
+            return _tool_result(open_usage_dashboard(arguments))
+        if name == "current_conversation_usage":
+            return _tool_result(current_conversation_usage(arguments))
+        if name == "usage_dashboard":
+            return _tool_result(usage_dashboard(arguments))
+        raise RuntimeError(f"Unknown tool: {name}")
+    if method in {"logging/setLevel", "notifications/initialized", "notifications/cancelled"}:
+        return {}
+    raise RuntimeError(f"Unsupported method: {method}")
+
+
+def _serve() -> None:
+    for line in sys.stdin:
+        try:
+            request = json.loads(line)
+            request_id = request.get("id")
+            if request_id is None:
+                continue
+            result = _handle(request.get("method", ""), request.get("params") or {})
+            response = {"jsonrpc": "2.0", "id": request_id, "result": result}
+        except Exception as exc:
+            response = {
+                "jsonrpc": "2.0",
+                "id": request.get("id") if "request" in locals() else None,
+                "error": {"code": -32603, "message": str(exc)},
+            }
+        sys.stdout.write(json.dumps(response, separators=(",", ":")) + "\n")
+        sys.stdout.flush()
+
+
+def _self_test() -> None:
+    with _connect() as connection:
+        limit = _latest_rate_limit(connection)
+    report = usage_dashboard({"range": "current_window"})
+    output = {
+        "database": "ok",
+        "widget": WIDGET_PATH.exists(),
+        "limit": limit,
+        "visibleTasks": len(report["tasks"]),
+        "sources": len(report["sources"]),
+        "totalTokens": report["totals"]["totalTokens"],
+    }
+    current_id = os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID")
+    if current_id:
+        current = current_conversation_usage({"thread_id": current_id})
+        output["currentThread"] = current["thread"]["name"]
+        output["currentTokens"] = current["combinedTokens"]
+    panel = open_usage_dashboard({"thread_id": current_id, "range": "current_window"})
+    with urlopen(panel["dashboardUrl"].replace("/?", "/health?"), timeout=5) as response:
+        output["panelHealth"] = json.loads(response.read().decode("utf-8"))["ok"]
+    print(json.dumps(output, indent=2))
+
+
+if __name__ == "__main__":
+    if "--self-test" in sys.argv:
+        _self_test()
+    elif "--serve-dashboard" in sys.argv:
+        panel = open_usage_dashboard({"range": "current_window"})
+        print(panel["dashboardUrl"], flush=True)
+        threading.Event().wait()
+    else:
+        _serve()

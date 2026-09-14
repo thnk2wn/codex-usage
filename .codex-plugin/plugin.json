@@ -1,0 +1,27 @@
+{
+  "name": "codex-usage",
+  "version": "0.1.0",
+  "description": "Private, local usage attribution for Codex conversations and tasks.",
+  "author": {
+    "name": "Geoff Hudik"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Usage",
+    "shortDescription": "See where local Codex usage went.",
+    "longDescription": "A private dashboard for conversation-level and cross-task Codex usage. It reads local Codex metadata and session transcripts without sending them anywhere.",
+    "developerName": "Geoff Hudik",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Show usage for this conversation.",
+      "Show usage across my current Codex window.",
+      "Where has my Codex usage gone since Friday?"
+    ],
+    "brandColor": "#0F766E"
+  },
+  "mcpServers": "./.mcp.json"
+}
