@@ -100,7 +100,6 @@
       let refreshTimer = null;
       let hydrating = false;
       let hydrateAttempts = 0;
-      let pendingRef = null;
       let preferenceChannel = null;
       try {
         if (typeof BroadcastChannel === 'function') preferenceChannel = new BroadcastChannel('codex-usage-preferences-v1');
@@ -115,24 +114,19 @@
       const metric = (label, value, help) => `<div class="metric" title="${esc(help)}"><span>${esc(label)}<i class="info" aria-label="${esc(help)}">i</i></span><strong>${esc(value)}</strong></div>`;
       const structured = result => result?.structuredContent || result?.result?.structuredContent || result?.toolResult?.structuredContent;
       const META_KEY = 'codexUsage/report';
-      // The card payload is delivered as component-only _meta so it never enters
-      // the model's context. Hosts surface that under different global names, so
-      // try each and fall back to re-requesting the data.
-      // A set_globals event carries only the globals that changed, so an update
-      // about something unrelated must never fall through to the persistent
-      // window.openai metadata — that still holds the original show_usage_card
-      // snapshot and would overwrite freshly refreshed data with a stale one.
-      // Scope strictly: an event payload is read alone, window.openai only when
-      // no payload was supplied.
-      // Hosts may hand over the whole tool result rather than its metadata map,
-      // in which case the payload sits inside that result's own _meta. Check the
-      // nested envelopes first, then the flat aliases, so a wrapped payload is
-      // found instead of falling through to the refresh fallback.
-      const ENVELOPE_KEYS = [
-        'mcp_tool_result', 'call_tool_result', 'toolResult', 'tool_result', 'result'
-      ];
-      const metaCandidates = globals => {
-        const source = globals || window.openai;
+      // The card's render data arrives as component-only _meta so it never enters
+      // the model's context. Two things about how hosts deliver it shape this code:
+      //  - They expose it under different global names, and may hand over the
+      //    whole tool result (mcp_tool_result, call_tool_result, ...) with the
+      //    payload inside that result's own _meta. Nested envelopes are checked
+      //    before flat aliases so a wrapped payload is found.
+      //  - A set_globals event carries only what changed. The persistent
+      //    window.openai globals still hold the ORIGINAL snapshot, so an update
+      //    about something unrelated must never fall through to them or it would
+      //    overwrite refreshed data with a stale one. When a source is supplied
+      //    it is read alone; window.openai is consulted only when none is.
+      const ENVELOPE_KEYS = ['mcp_tool_result', 'call_tool_result', 'toolResult', 'tool_result', 'result'];
+      const metaCandidates = source => {
         if (!source || typeof source !== 'object') return [];
         const bases = [
           source.toolResponseMetadata, source.toolResponseMeta,
@@ -152,21 +146,19 @@
         }
         return candidates;
       };
-      const reportFromMeta = globals => {
-        for (const source of metaCandidates(globals)) {
-          const report = source && (source[META_KEY] || source.codexUsageReport);
+      const reportIn = source => {
+        for (const candidate of metaCandidates(source)) {
+          const report = candidate[META_KEY] || candidate.codexUsageReport;
           if (report && report.kind === 'usage_card') return report;
         }
         return null;
       };
-      // Reuse the same normalisation on request responses and tool-result
-      // notifications, so a host that wraps the result on those channels is
-      // recognised too. Never pass a falsy source: reportFromMeta would then
-      // fall back to the persistent window.openai globals.
-      const metaFromResult = result => {
+      // Persistent globals: used only for the two bootstrap reads at startup.
+      const reportFromGlobals = () => reportIn(window.openai);
+      // Request responses and tool-result notifications may wrap the result too.
+      const reportFromResult = result => {
         for (const source of [result, result?.result, result?.toolResult]) {
-          if (!source || typeof source !== 'object') continue;
-          const found = reportFromMeta(source);
+          const found = reportIn(source);
           if (found) return found;
         }
         return null;
@@ -198,9 +190,8 @@
         }
         reportHeight();
       };
-      const hydrate = reference => {
-        const ref = typeof reference === 'string' ? { threadId: reference } : (reference || {});
-        const threadId = ref.threadId;
+      const hydrate = ref => {
+        const threadId = ref && ref.threadId;
         if (hydrating || !initialized || !threadId) return;
         if (hydrateAttempts >= HYDRATE_ATTEMPT_LIMIT) {
           hydrateFailed(ref);
@@ -222,7 +213,7 @@
             live_until_epoch_ms: Number(ref.liveUntilEpochMs || 0)
           }
         }).then(result => {
-          const report = metaFromResult(result) || structured(result);
+          const report = reportFromResult(result) || structured(result);
           if (!report) {
             retry();
             return;
@@ -287,19 +278,14 @@
           }
         }, delay);
       };
-      function render(data, globals) {
-        if (!data || data.kind !== 'usage_card') {
-          const fromMeta = reportFromMeta(globals);
-          if (fromMeta) {
-            data = fromMeta;
-          } else if (data && data.kind === 'usage_card_ref' && data.threadId) {
-            pendingRef = data;
-            hydrate(data);
-            return;
-          } else {
-            return;
-          }
+      function render(data) {
+        if (!data) return;
+        // A bare reference means the host did not deliver _meta: fetch the data.
+        if (data.kind === 'usage_card_ref') {
+          hydrate(data);
+          return;
         }
+        if (data.kind !== 'usage_card') return;
         latestData = data;
         const existing = root.querySelector(':scope > details');
         const expanded = existing ? existing.open : Boolean(window.openai?.widgetState?.expanded);
@@ -415,10 +401,9 @@
       window.addEventListener('openai:set_globals', event => {
         const globals = event.detail?.globals;
         if (!globals) return;
-        const next = reportFromMeta(globals) || globals.toolOutput;
-        // Nothing card-related changed in this update; leave what is rendered.
-        if (next === undefined || next === null) return;
-        render(next, globals);
+        // Read only this update. If nothing card-related changed, leave the
+        // rendered card alone rather than falling back to persistent globals.
+        render(reportIn(globals) || globals.toolOutput);
       });
       window.addEventListener('message', event => {
         if (event.source !== window.parent) return;
@@ -433,18 +418,18 @@
         }
         if (message.method === 'ui/notifications/tool-result') {
           const params = message.params || {};
-          render(metaFromResult(params) || structured(params));
+          render(reportFromResult(params) || structured(params));
         }
       }, { passive: true });
-      render(reportFromMeta() || window.openai?.toolOutput);
+      render(reportFromGlobals() || window.openai?.toolOutput);
       request('ui/initialize', {
-        appInfo: { name: 'codex-usage', version: '0.2.0' },
+        appInfo: { name: 'codex-usage', version: '0.3.0' },
         appCapabilities: { availableDisplayModes: ['inline'] },
         protocolVersion: '2025-11-21'
       }).then(() => {
         initialized = true;
         notify('ui/notifications/initialized');
-        render(reportFromMeta() || window.openai?.toolOutput || pendingRef);
+        render(reportFromGlobals() || window.openai?.toolOutput);
         reportHeight();
       }).catch(() => {
         reportHeight();
