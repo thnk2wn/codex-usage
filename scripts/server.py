@@ -28,10 +28,12 @@ SERVER_VERSION = "0.1.0"
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 DASHBOARD_PATH = PLUGIN_ROOT / "assets" / "dashboard.html"
 CARD_PATH = PLUGIN_ROOT / "assets" / "status-card.html"
-CARD_RESOURCE_URI = "ui://codex-usage/status-card-v3.html"
+CARD_RESOURCE_URI = "ui://codex-usage/status-card-v5.html"
 LEGACY_CARD_RESOURCE_URIS = {
     "ui://codex-usage/status-card-v1.html",
     "ui://codex-usage/status-card-v2.html",
+    "ui://codex-usage/status-card-v3.html",
+    "ui://codex-usage/status-card-v4.html",
 }
 CARD_HTML = CARD_PATH.read_text(encoding="utf-8")
 _DASHBOARD_SERVER: ThreadingHTTPServer | None = None

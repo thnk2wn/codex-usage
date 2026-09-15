@@ -57,11 +57,31 @@
   <script>
     (() => {
       const root = document.getElementById('root');
+      const pendingRequests = new Map();
+      let nextRequestId = 1;
+      let reportedHeight = 0;
       const compact = n => new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(Number(n || 0));
       const pct = n => n == null ? '—' : `${Number(n).toFixed(Number(n) < 10 ? 1 : 0)}%`;
       const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
       const when = epoch => epoch ? new Intl.DateTimeFormat(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }).format(new Date(epoch * 1000)) : '—';
       const metric = (label, value) => `<div class="metric"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+      const notify = (method, params = {}) => {
+        window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
+      };
+      const request = (method, params) => {
+        const id = nextRequestId++;
+        const response = new Promise((resolve, reject) => pendingRequests.set(id, { resolve, reject }));
+        window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
+        return response;
+      };
+      const reportHeight = () => {
+        window.requestAnimationFrame(() => {
+          const height = Math.ceil(Math.max(document.body.scrollHeight, document.body.getBoundingClientRect().height));
+          if (height === reportedHeight) return;
+          reportedHeight = height;
+          window.openai?.notifyIntrinsicHeight?.(height);
+        });
+      };
       function render(data) {
         if (!data || data.kind !== 'usage_card') return;
         const context = data.context || {};
@@ -101,7 +121,9 @@
         const details = root.querySelector('details');
         details.addEventListener('toggle', () => {
           window.openai?.setWidgetState?.({ expanded: details.open });
+          reportHeight();
         });
+        reportHeight();
       }
 
       window.addEventListener('openai:set_globals', event => render(event.detail?.globals?.toolOutput));
@@ -109,12 +131,30 @@
         if (event.source !== window.parent) return;
         const message = event.data || {};
         if (message.jsonrpc !== '2.0') return;
+        if (message.id !== undefined && pendingRequests.has(message.id)) {
+          const pending = pendingRequests.get(message.id);
+          pendingRequests.delete(message.id);
+          if (message.error) pending.reject(message.error);
+          else pending.resolve(message.result);
+          return;
+        }
         if (message.method === 'ui/notifications/tool-result') {
           const params = message.params || {};
           render(params.structuredContent || params.result?.structuredContent || params.toolResult?.structuredContent);
         }
       }, { passive: true });
       render(window.openai?.toolOutput);
+      request('ui/initialize', {
+        appInfo: { name: 'codex-usage', version: '0.1.0' },
+        appCapabilities: { availableDisplayModes: ['inline'] },
+        protocolVersion: '2025-11-21'
+      }).then(() => {
+        notify('ui/notifications/initialized');
+        render(window.openai?.toolOutput);
+        reportHeight();
+      }).catch(() => {
+        reportHeight();
+      });
     })();
   </script>
 </body>
