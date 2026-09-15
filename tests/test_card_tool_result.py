@@ -161,6 +161,13 @@ class CardResourceTest(unittest.TestCase):
         self.assertEqual(manifest["version"], server.SERVER_VERSION)
         self.assertNotEqual(manifest["version"], "0.2.0")
 
+    def test_card_announces_the_server_version(self) -> None:
+        # The ui/initialize handshake hard-codes a version string; keep it from
+        # drifting behind the manifest the way it did across the last two bumps.
+        self.assertIn(
+            f"version: '{server.SERVER_VERSION}'", server.CARD_HTML
+        )
+
     def test_card_html_reads_the_meta_key(self) -> None:
         self.assertIn(server.CARD_REPORT_META_KEY, server.CARD_HTML)
 

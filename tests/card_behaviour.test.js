@@ -7,13 +7,16 @@ const path = require('path');
 const vm = require('vm');
 const assert = require('assert');
 
-const CARD = path.join(__dirname, '..', 'assets', 'status-card.html');
+// CARD_HTML_PATH lets the suite be pointed at another revision of the card,
+// e.g. to confirm a new case fails before its fix.
+const CARD = process.env.CARD_HTML_PATH || path.join(__dirname, '..', 'assets', 'status-card.html');
 const SCRIPT = /<script>([\s\S]*)<\/script>/.exec(fs.readFileSync(CARD, 'utf8'))[1];
 const META_KEY = 'codexUsage/report';
 
 function report(overrides) {
   return Object.assign({
     kind: 'usage_card',
+    generatedAt: '2026-09-15T20:00:00+00:00',
     thread: { id: 'task-1', name: 'Test task' },
     context: { usedPercent: 50, inputTokens: 1, windowTokens: 2 },
     sessionUsage: { totalTokens: 1, cachedPercent: 0 },
@@ -52,11 +55,13 @@ function makeElement() {
   return element;
 }
 
-function boot() {
+function boot(options) {
   const listeners = {};
   const sent = [];
   const root = makeElement();
-  const openai = { toolOutput: undefined, notifyIntrinsicHeight() {}, setWidgetState() {} };
+  const openai = (options && options.noOpenai)
+    ? undefined
+    : { toolOutput: undefined, notifyIntrinsicHeight() {}, setWidgetState() {} };
 
   const windowStub = {
     openai,
@@ -222,6 +227,64 @@ test('hydration preserves a live window when the caller asked for one', async ()
   const call = host.sent.find(m => m.params?.name === 'refresh_usage_card');
   assert.strictEqual(call.params.arguments.live, true);
   assert.strictEqual(call.params.arguments.live_until_epoch_ms, deadline);
+});
+
+test('a reference delivered before init is replayed after init', async () => {
+  // Host with no window.openai posts the tool result while ui/initialize is
+  // still in flight. The ref must be kept and hydrated once the bridge is up.
+  const host = boot({ noOpenai: true });
+  host.fire('message', {
+    jsonrpc: '2.0',
+    method: 'ui/notifications/tool-result',
+    params: { structuredContent: { kind: 'usage_card_ref', threadId: 'task-1' } }
+  });
+  assert.strictEqual(host.sent.filter(m => m.params?.name === 'refresh_usage_card').length, 0, 'cannot hydrate before init');
+  await initialize(host);
+  const calls = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
+  assert.strictEqual(calls.length, 1, 'pre-init reference should hydrate exactly once after init');
+});
+
+test('a re-delivered reference never replaces a rendered card', async () => {
+  const host = boot();
+  await initialize(host);
+  host.fire('openai:set_globals', {
+    globals: { toolResponseMetadata: { [META_KEY]: report({ thread: { id: 'task-1', name: 'GOOD' } }) } }
+  });
+  assert.ok(host.root.innerHTML.includes('GOOD'));
+  // Host re-emits the persistent ref alongside an unrelated change.
+  host.fire('openai:set_globals', {
+    globals: { theme: 'dark', toolOutput: { kind: 'usage_card_ref', threadId: 'task-1' } }
+  });
+  assert.strictEqual(host.sent.filter(m => m.params?.name === 'refresh_usage_card').length, 0, 'must not hydrate over a rendered card');
+  assert.ok(host.root.innerHTML.includes('GOOD'), 'rendered card must survive');
+});
+
+test('an older snapshot of the same thread cannot overwrite a newer one', async () => {
+  const host = boot();
+  await initialize(host);
+  const older = report({ generatedAt: '2026-09-15T20:00:00+00:00', detailsLoaded: false, thread: { id: 'task-1', name: 'OLDER' } });
+  const newer = report({ generatedAt: '2026-09-15T20:05:00+00:00', thread: { id: 'task-1', name: 'NEWER' } });
+  host.fire('openai:set_globals', { globals: { toolResponseMetadata: { [META_KEY]: newer } } });
+  assert.ok(host.root.innerHTML.includes('NEWER'));
+  // A host that re-sends full globals, or a late tool-result for the original call.
+  host.fire('message', { jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { _meta: { [META_KEY]: older } } });
+  host.fire('openai:set_globals', { globals: { toolResponseMetadata: { [META_KEY]: older } } });
+  assert.ok(host.root.innerHTML.includes('NEWER'), 'older snapshot must be ignored');
+  assert.ok(!host.root.innerHTML.includes('OLDER'));
+});
+
+test('a render error during hydration does not loop the fallback', async () => {
+  const host = boot();
+  await initialize(host);
+  host.fire('openai:set_globals', { globals: { toolOutput: { kind: 'usage_card_ref', threadId: 'task-1' } } });
+  const first = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
+  assert.strictEqual(first.length, 1);
+  // A report that makes render throw (non-numeric reset epoch reaches `when`).
+  const poison = report({ limit: { usedPercent: 50, resetsAt: 'not-a-number', windowMinutes: 60 } });
+  host.reply(first[0].id, { structuredContent: poison });
+  await new Promise(resolve => setTimeout(resolve, 1600));
+  const after = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
+  assert.strictEqual(after.length, 1, `render errors must not re-request; saw ${after.length}`);
 });
 
 test('a failed hydration retries instead of stranding the card', async () => {
