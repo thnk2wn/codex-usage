@@ -2,6 +2,8 @@
 
 A private, local-first Codex plugin that attributes raw processed tokens to conversations, subagents, automations, and internal activity. It supports personal installs, private workspace distribution, and self-contained GitHub release bundles without public marketplace publication.
 
+![Codex Usage compact and expanded usage cards](assets/codex-usage-card-expanded.png)
+
 ## Install
 
 This repository is also a small Git marketplace, so installation does not require publication or OpenAI marketplace review.
@@ -22,11 +24,13 @@ codex plugin add codex-usage@thnk2wn
 
 ## Share privately
 
-For teammates, grant read access to this repository and send them the two installation commands above. That is a private Git marketplace: distribution and access stay under GitHub, with no public listing or external approval workflow.
+Without workspace-admin access, private sharing is per user rather than an organization-wide deployment. Grant each teammate read access to this repository and send them the two installation commands above, or have them use the GitHub release bundle below. Distribution and access stay under GitHub, with no public listing or external approval workflow.
+
+Each teammate must install the plugin themselves. Their workspace must also permit personal or local plugins. If workspace policy disables those installations, there is no supported admin-free bypass; a workspace admin must allow the plugin or import it for the workspace.
 
 ## Install across a private workspace
 
-A ChatGPT workspace admin can distribute this plugin directly from the private GitHub repository:
+A ChatGPT workspace admin is required to distribute this plugin automatically across a private workspace. The admin can import it directly from the private GitHub repository:
 
 1. Make sure the GitHub account used for the import can read this repository and has any required organization approval.
 2. In ChatGPT, open **Admin → Plugins**, then choose **Add → Import marketplace**.
