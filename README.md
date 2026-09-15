@@ -2,7 +2,7 @@
 
 A private, local-first Codex plugin that attributes raw processed tokens to conversations, subagents, automations, and internal activity. It supports personal installs, private workspace distribution, and self-contained GitHub release bundles without public marketplace publication.
 
-![Codex Usage compact and expanded usage cards](assets/codex-usage-card-expanded.png)
+![Codex Usage expanded usage card](assets/codex-usage-card.png)
 
 ## Install
 
