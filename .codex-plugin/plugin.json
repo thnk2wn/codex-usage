@@ -1,15 +1,26 @@
 {
   "name": "codex-usage",
   "version": "0.1.0",
-  "description": "Private, local Codex usage cards and cross-task attribution.",
+  "description": "Private Codex context, quota pace, and cross-task usage insights.",
   "author": {
-    "name": "Geoff Hudik"
+    "name": "Geoff Hudik",
+    "url": "https://github.com/thnk2wn"
   },
+  "homepage": "https://github.com/thnk2wn/codex-usage",
+  "repository": "https://github.com/thnk2wn/codex-usage",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "usage",
+    "tokens",
+    "context",
+    "quota"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Codex Usage",
-    "shortDescription": "Compact local usage cards for Codex.",
-    "longDescription": "A private native card for conversation context pressure and cross-task Codex usage. It reads local Codex metadata and session transcripts without sending them anywhere.",
+    "shortDescription": "See context, quota pace, and top tasks.",
+    "longDescription": "A private, local usage card for Codex. See context pressure, recent token processing, cache reuse, child-task usage, account reset timing, projected pace, and the tasks responsible for the most activity. Data stays on your Mac.",
     "developerName": "Geoff Hudik",
     "category": "Productivity",
     "capabilities": [
@@ -17,11 +28,17 @@
       "Read"
     ],
     "defaultPrompt": [
-      "Show the compact usage card for this conversation.",
-      "Show usage across my current Codex window.",
-      "Which tasks used the most Codex capacity this week?"
+      "Show my Codex usage card.",
+      "Am I on pace to hit my Codex limit?",
+      "Which tasks used the most this window?"
     ],
-    "brandColor": "#0F766E"
+    "brandColor": "#0F766E",
+    "composerIcon": "./assets/codex-usage-icon.png",
+    "logo": "./assets/codex-usage-icon.png",
+    "logoDark": "./assets/codex-usage-icon.png",
+    "screenshots": [
+      "./assets/codex-usage-overview.png"
+    ]
   },
   "mcpServers": "./.mcp.json"
 }

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B1110"/>
+      <stop offset="1" stop-color="#172421"/>
+    </linearGradient>
+    <style>
+      .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .muted { fill: #9CACA8; }
+      .white { fill: #F1F7F5; }
+      .label { fill: #AAB8B4; font-size: 19px; font-weight: 600; letter-spacing: 1.8px; }
+      .value { fill: #F1F7F5; font-size: 30px; font-weight: 720; }
+      .row { fill: #E6EFEC; font-size: 22px; }
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <circle cx="1450" cy="40" r="390" fill="#147D74" opacity=".10"/>
+  <circle cx="110" cy="850" r="360" fill="#147D74" opacity=".07"/>
+  <rect x="84" y="58" width="1432" height="784" rx="26" fill="#121B19" stroke="#344743" stroke-width="2"/>
+
+  <rect x="116" y="88" width="58" height="58" rx="16" fill="#15978C"/>
+  <text x="145" y="126" class="sans white" font-size="24" font-weight="760" text-anchor="middle">CU</text>
+  <text x="198" y="126" class="sans white" font-size="28" font-weight="720">Codex usage</text>
+  <text x="412" y="126" class="sans muted" font-size="25">Context 41% · Task 3.8M raw · 7-day 42%</text>
+  <path d="M1451 112 l9 10 9-10" fill="none" stroke="#9CACA8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="84" y1="168" x2="1516" y2="168" stroke="#344743" stroke-width="2"/>
+
+  <text x="116" y="220" class="sans white" font-size="31" font-weight="720">Current conversation</text>
+  <rect x="116" y="246" width="1368" height="10" rx="5" fill="#33423F"/>
+  <rect x="116" y="246" width="561" height="10" rx="5" fill="#168C82"/>
+
+  <g class="sans">
+    <g transform="translate(116 286)"><rect width="322" height="120" rx="18" fill="#1D2926"/><text x="22" y="38" class="label">CONTEXT INPUT</text><text x="22" y="84" class="value">104.2K / 258.4K</text></g>
+    <g transform="translate(454 286)"><rect width="322" height="120" rx="18" fill="#1D2926"/><text x="22" y="38" class="label">TASK + CHILDREN</text><text x="22" y="84" class="value">3.8M raw</text></g>
+    <g transform="translate(792 286)"><rect width="322" height="120" rx="18" fill="#1D2926"/><text x="22" y="38" class="label">INPUT CACHE HIT</text><text x="22" y="84" class="value">92%</text></g>
+    <g transform="translate(1130 286)"><rect width="354" height="120" rx="18" fill="#1D2926"/><text x="22" y="38" class="label">LAST OUTPUT</text><text x="22" y="84" class="value">842</text></g>
+
+    <g transform="translate(116 422)"><rect width="322" height="120" rx="18" fill="#1D2926"/><text x="22" y="38" class="label">LAST PROCESSED</text><text x="22" y="84" class="value">104.9K</text></g>
+    <g transform="translate(454 422)"><rect width="322" height="120" rx="18" fill="#1D2926"/><text x="22" y="38" class="label">CHILD TASKS</text><text x="22" y="84" class="value">2 · 640K raw</text></g>
+    <g transform="translate(792 422)"><rect width="322" height="120" rx="18" fill="#1D2926"/><text x="22" y="38" class="label">7-DAY USAGE</text><text x="22" y="84" class="value">42%</text></g>
+    <g transform="translate(1130 422)"><rect width="354" height="120" rx="18" fill="#1D2926"/><text x="22" y="38" class="label">LIMIT RESETS</text><text x="22" y="84" class="value">Friday, 9:07 AM</text></g>
+  </g>
+
+  <rect x="116" y="562" width="1368" height="86" rx="16" fill="#19302B"/>
+  <text x="140" y="597" class="sans white" font-size="24" font-weight="700">On pace to stay within the limit</text>
+  <text x="140" y="628" class="sans muted" font-size="20">36% of time elapsed · 42% used</text>
+  <text x="1456" y="614" class="sans white" font-size="25" font-weight="700" text-anchor="end">82% projected</text>
+
+  <text x="116" y="700" class="sans label">TOP TASKS THIS LIMIT WINDOW</text>
+  <g class="sans row">
+    <text x="116" y="743">Refactor authentication flow</text><text x="1370" y="743" font-weight="700" text-anchor="end">12.4M</text><text x="1484" y="743" class="muted" text-anchor="end">27%</text>
+    <line x1="116" y1="761" x2="1484" y2="761" stroke="#344743"/>
+    <text x="116" y="796">Review API performance</text><text x="1370" y="796" font-weight="700" text-anchor="end">8.1M</text><text x="1484" y="796" class="muted" text-anchor="end">18%</text>
+  </g>
+</svg>

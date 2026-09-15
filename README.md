@@ -4,6 +4,30 @@ A private, local-first Codex plugin that attributes raw processed tokens to conv
 
 It is designed for personal installation; publishing it to a shared marketplace is optional.
 
+## Install
+
+This repository is also a small Git marketplace, so installation does not require publication or OpenAI marketplace review.
+
+```bash
+codex plugin marketplace add git@github.com:thnk2wn/codex-usage.git --ref main
+codex plugin add codex-usage@thnk2wn
+```
+
+Start a new Codex task after installation so the skill and tools are loaded. The repository is currently private, so the installing user needs GitHub read access and working SSH credentials.
+
+To pick up a newer version later:
+
+```bash
+codex plugin marketplace upgrade thnk2wn
+codex plugin add codex-usage@thnk2wn
+```
+
+## Share privately
+
+For teammates, grant read access to this repository and send them the two installation commands above. That is a private Git marketplace: distribution and access stay under GitHub, with no public listing or external approval workflow.
+
+For wider organization distribution, transfer or mirror the repository into the organization and change the Git URL in the install command and `.claude-plugin/marketplace.json`. A public or OpenAI-curated marketplace listing can remain a later step after the plugin has been tested more broadly.
+
 ## UI surfaces
 
 - `show_usage_card` renders a compact native usage-data row directly in the conversation, without a separate tool disclosure after loading. Clicking the row expands clearly defined token metrics, a limit-window pace projection, a subdued compaction notice, and the top five tasks. Each task row expands to show why its raw total is large.

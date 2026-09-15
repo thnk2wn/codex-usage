@@ -50,8 +50,8 @@ def _codex_home() -> Path:
 
 
 def _local_timezone():
-    name = os.environ.get("TZ", "America/New_York")
-    if ZoneInfo is not None:
+    name = os.environ.get("TZ")
+    if name and ZoneInfo is not None:
         try:
             return ZoneInfo(name)
         except Exception:

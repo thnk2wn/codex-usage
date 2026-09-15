@@ -1,0 +1,20 @@
+{
+  "name": "thnk2wn",
+  "owner": {
+    "name": "Geoff Hudik"
+  },
+  "metadata": {
+    "description": "Private, local-first Codex utilities.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "codex-usage",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/thnk2wn/codex-usage.git"
+      },
+      "description": "See Codex context pressure, quota pace, cache reuse, child-task usage, and cross-task attribution without sending local usage data elsewhere."
+    }
+  ]
+}

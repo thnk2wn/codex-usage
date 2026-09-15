@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#101817"/>
+  <circle cx="256" cy="256" r="168" fill="none" stroke="#293936" stroke-width="28"/>
+  <path d="M 137 375 A 168 168 0 1 1 407 315" fill="none" stroke="#15978C" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="407" cy="315" r="17" fill="#6EE7D8"/>
+  <text x="256" y="284" fill="#F4FAF8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="100" font-weight="760" text-anchor="middle">CU</text>
+</svg>
