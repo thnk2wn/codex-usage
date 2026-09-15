@@ -107,7 +107,7 @@ Practical consequence: **session length matters far more than card frequency.** 
 
 To reduce the cost:
 
-- **Zero ongoing cost.** Set automatic cards to **off** from any expanded card, then run `open_usage_dashboard` once and leave the browser tab open. Opening it returns a tool result like any other tool, so it costs roughly 100 tokens one time. Every refresh after that is served from the browser to the local server every 20 seconds and never enters the model's context, so the ongoing cost really is zero.
+- **Zero ongoing cost per task.** Set automatic cards to **off** from any expanded card, then ask for the dashboard and leave the panel open. Opening it returns a tool result like any other tool, so it costs roughly 100 tokens one time. Every refresh after that is served from the browser to the local server every 20 seconds and never enters the model's context, so the ongoing cost really is zero. Note that the dashboard server lives inside the task's local MCP process and stops when that task closes, and it binds a fresh random port each time, so a new task means paying that one-time cost again on a new URL.
 - **Lower the cadence.** Moving from every 5 minutes to every 15 minutes cuts card volume roughly threefold. Use this in long sessions especially.
 - **Ask on demand.** With automatic cards off, `show_usage_card` still works whenever you want a snapshot, and `current_conversation_usage` returns a much smaller text-only answer.
 
