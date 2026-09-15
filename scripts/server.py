@@ -28,7 +28,7 @@ SERVER_VERSION = "0.1.0"
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 DASHBOARD_PATH = PLUGIN_ROOT / "assets" / "dashboard.html"
 CARD_PATH = PLUGIN_ROOT / "assets" / "status-card.html"
-CARD_RESOURCE_URI = "ui://codex-usage/status-card-v1.html"
+CARD_RESOURCE_URI = "ui://codex-usage/status-card-v2.html"
 _DASHBOARD_SERVER: ThreadingHTTPServer | None = None
 _DASHBOARD_LOCK = threading.Lock()
 _REPORT_CACHE: dict[tuple[str, bool], tuple[float, dict[str, Any]]] = {}
@@ -673,10 +673,21 @@ def _text_summary(report: dict[str, Any]) -> str:
         )
     if report["kind"] == "usage_card":
         context = report["context"].get("usedPercent")
-        context_text = f"{context:.0f}% context" if context is not None else "context unavailable"
+        context_text = f"{context:.0f}%" if context is not None else "—"
+        account = report.get("limit") or {}
+        account_percent = account.get("usedPercent")
+        account_text = f"{account_percent:.0f}%" if account_percent is not None else "—"
+        token_count = report["combinedTokens"]
+        session_text = (
+            f"{token_count / 1_000_000:.1f}M"
+            if token_count >= 1_000_000
+            else f"{token_count / 1_000:.1f}K"
+            if token_count >= 1_000
+            else str(token_count)
+        )
         return (
-            f"{report['thread']['name']}: {context_text}, "
-            f"{report['combinedTokens']:,} cumulative raw tokens."
+            f"⚡ Usage · Context {context_text} · Session {session_text} raw · "
+            f"Account {account_text} · Say “usage details” for breakdown."
         )
     tasks = report.get("tasks") or []
     leader = tasks[0] if tasks else None

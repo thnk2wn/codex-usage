@@ -11,6 +11,10 @@ Use the plugin's read-only tools instead of querying Codex's private SQLite data
 
 Call `show_usage_card` by default when the user asks to show, display, view, or check Codex usage. Omit `thread_id` so the card scopes itself to the current task. The compact row is intentionally collapsed; the user can expand it for current-context pressure, latest response output, cached input, subagents, account reset, and top tasks.
 
+If the tool reports that the current task ID is unavailable, immediately retry with the current Codex task ID when it is known from the task context.
+
+Mobile Remote currently preserves the tool result but may not render the MCP App iframe. The text fallback is intentionally one line and tells the user to say `usage details`. When the user asks for those details after a text-only result, call `show_usage_card` again and summarize its structured result in text: context input/window, latest output, cached input, subagents, account usage/reset, alerts, and top tasks. Do not claim that the one-line mobile result is clickable or expandable.
+
 Do not render the card after unrelated replies. MCP UI is tool-result UI and cannot be pushed independently by a background daemon. Do not claim automatic popup alerts. The card may highlight context pressure or a large latest response when it is invoked.
 
 ## Optional dashboard
