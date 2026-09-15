@@ -10,6 +10,14 @@
     html, body { min-height: 48px; }
     body { margin: 0; color: #17211f; background: transparent; }
     .card { border: 1px solid #dce4e1; border-radius: 12px; overflow: hidden; background: #fbfdfc; }
+    .card.usage-warning { border-color: #d6a24a; box-shadow: inset 3px 0 #b7791f; }
+    .card.usage-warning > details > summary { background: #fffaf0; }
+    .card.usage-warning .mark { background: #b7791f; }
+    .card.usage-warning .account-status { color: #8a5a0a; font-weight: 760; }
+    .card.usage-critical { border-color: #dc6a63; box-shadow: inset 3px 0 #c2413b; }
+    .card.usage-critical > details > summary { background: #fff3f2; }
+    .card.usage-critical .mark { background: #c2413b; }
+    .card.usage-critical .account-status { color: #a52f2a; font-weight: 780; }
     .card > details > summary { display: grid; grid-template-columns: auto 1fr auto auto; gap: 12px; align-items: center; padding: 11px 13px; cursor: pointer; list-style: none; }
     summary::-webkit-details-marker { display: none; }
     .mark { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 7px; color: white; background: #0f766e; font-weight: 750; font-size: 12px; }
@@ -58,6 +66,12 @@
     @media (prefers-color-scheme: dark) {
       body { color: #edf4f1; }
       .card { background: #151b1a; border-color: #34403d; }
+      .card.usage-warning { border-color: #9a6f2b; }
+      .card.usage-warning > details > summary { background: #2c261a; }
+      .card.usage-warning .account-status { color: #f4bf61; }
+      .card.usage-critical { border-color: #a94b46; }
+      .card.usage-critical > details > summary { background: #301d1c; }
+      .card.usage-critical .account-status { color: #ff8d86; }
       .status, h3 { color: #aebbb7; }
       .detail { border-color: #34403d; }
       .meter { background: #34403d; }
@@ -162,12 +176,29 @@
         const session = data.sessionUsage || {};
         const latest = data.latestTurn || {};
         const limit = data.limit || {};
+        const pace = data.pace;
         const windowDays = Number(limit.windowMinutes || 0) / 1440;
         const windowName = Number.isInteger(windowDays) && windowDays > 0 ? `${windowDays}-day` : 'Account';
-        const account = limit.usedPercent == null ? `${windowName} —` : `${windowName} ${pct(limit.usedPercent)}`;
+        const remainingPercent = limit.usedPercent == null ? null : Math.max(0, 100 - Number(limit.usedPercent));
+        const projectedOver = pace?.status === 'likely_exhausts' || Number(pace?.projectedPercent || 0) > 100;
+        const usageLevel = remainingPercent != null && remainingPercent <= 10
+          ? 'critical'
+          : (remainingPercent != null && remainingPercent <= 15) || projectedOver
+            ? 'warning'
+            : 'normal';
+        const account = remainingPercent == null
+          ? `${windowName} —`
+          : `${windowName} ${pct(remainingPercent)} left${projectedOver && remainingPercent > 15 ? ' · projected over' : ''}`;
+        const accountHelp = usageLevel === 'critical'
+          ? 'Critical: 10% or less remains in the active account limit window.'
+          : usageLevel === 'warning'
+            ? remainingPercent != null && remainingPercent <= 15
+              ? 'Warning: 15% or less remains in the active account limit window.'
+              : 'Warning: current average pace is projected to exceed the account limit.'
+            : 'Remaining capacity in the active account limit window.';
+        root.className = `card usage-${usageLevel}`;
         const taskRows = (data.topTasks || []).map(task => `<details class="task-row" data-task-id="${esc(task.id)}" ${expandedTasks.has(String(task.id)) ? 'open' : ''}><summary title="Show token composition"><span class="name">${esc(task.name)}</span><strong>${compact(task.totalTokens)}</strong><span class="share">${pct(task.sharePercent)}</span><span class="task-caret">⌄</span></summary><div class="task-breakdown"><span>Input <strong>${compact(task.inputTokens)}</strong></span><span>Cached <strong>${pct(task.cachedPercent)}</strong></span><span>Output <strong>${compact(task.outputTokens)}</strong></span><span>Reasoning <strong>${compact(task.reasoningOutputTokens)}</strong></span><span>Responses <strong>${compact(task.responses)}</strong></span><span>${esc(task.model || task.source || 'unknown')}</span></div></details>`).join('');
         const alerts = (data.alerts || []).map(alert => `<div class="alert ${esc(alert.level)}"><strong>${esc(alert.title)}</strong>${esc(alert.detail)}</div>`).join('');
-        const pace = data.pace;
         let paceRow = '';
         if (pace) {
           const risk = pace.status === 'likely_exhausts';
@@ -180,7 +211,7 @@
           <details ${expanded ? 'open' : ''}>
             <summary>
               <span class="mark">CU</span>
-              <span class="line"><span class="title">Codex usage</span><span class="status">Context ${pct(context.usedPercent)} · Task ${compact(data.combinedTokens)} raw · ${account}</span></span>
+              <span class="line"><span class="title">Codex usage</span><span class="status">Context ${pct(context.usedPercent)} · Task ${compact(data.combinedTokens)} raw · <strong class="account-status" title="${esc(accountHelp)}">${esc(account)}</strong></span></span>
               <span class="chevron" aria-hidden="true">⌄</span>
               <span class="snapshot" title="Snapshot time. This card refreshes briefly, then freezes.">${esc(clock(data.generatedAt))}</span>
             </summary>

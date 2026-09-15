@@ -72,7 +72,7 @@ See [OpenAI's plugin submission documentation](https://developers.openai.com/plu
 ## UI surfaces
 
 - Automatic cards are rate-limited to one per task per minute by default. A qualifying user prompt creates a **new** compact snapshot near that turn; it refreshes in place for up to two minutes while work continues, then freezes in conversation history. Older cards are never rewritten.
-- The minimized header includes the snapshot time. Clicking it expands clearly defined token metrics, a limit-window pace projection, a subdued compaction notice, the top five tasks, and a global automatic-card frequency control (every turn, 30 seconds, 1/5/15 minutes, or off). Open card instances synchronize that preference when the client permits it, and every historical card rechecks it when expanded.
+- The minimized header includes the snapshot time and remaining account capacity. It turns amber when 15% or less remains or current pace projects over the limit, and red when 10% or less remains. Clicking it expands clearly defined token metrics, a limit-window pace projection, a subdued compaction notice, the top five tasks, and a global automatic-card frequency control (every turn, 30 seconds, 1/5/15 minutes, or off). Open card instances synchronize that preference when the client permits it, and every historical card rechecks it when expanded.
 - `show_usage_card` can also render a card on demand. `refresh_usage_card` is used only by an already-rendered card, so live updates do not add more conversation items.
 - Mobile Remote falls back to a single-line status result when it does not render the MCP App iframe; say `usage details` for a text breakdown.
 - `open_usage_dashboard` starts the optional private localhost dashboard for a larger cross-task view.
