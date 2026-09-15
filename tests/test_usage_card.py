@@ -61,13 +61,20 @@ class UsageCardTest(unittest.TestCase):
                 },
             ),
         ):
-            initial = server._handle(
+            initial_result = server._handle(
                 "tools/call",
                 {
                     "name": "show_usage_card",
                     "arguments": {"thread_id": "task-1", "live": True},
                 },
-            )["structuredContent"]
+            )
+            # The card renders from component-only _meta; the transcript sees
+            # only a summary line and a reference back to this thread.
+            self.assertEqual(
+                initial_result["structuredContent"],
+                {"kind": "usage_card_ref", "threadId": "task-1"},
+            )
+            initial = initial_result["_meta"][server.CARD_REPORT_META_KEY]
 
             self.assertFalse(initial["detailsLoaded"])
             self.assertIsNone(initial["windowUsage"])

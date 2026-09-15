@@ -95,9 +95,11 @@ The five-minute automatic-card cadence limits how often a new conversation item 
 
 ## What the plugin itself costs
 
-Cards are MCP tool results, so they occupy conversation context and are not free. Each automatic card costs roughly 500 tokens: about 96 for the hook instruction and about 400 for the compact card payload.
+Cards are MCP tool results, so they occupy conversation context and are not free. Each automatic card costs roughly 130 tokens: about 96 for the hook instruction and about 35 for the summary line and a small reference.
 
-Only that compact payload enters the conversation. The cross-task breakdown is fetched afterwards by the rendered card through `refresh_usage_card`, which updates the card in place without adding a conversation item, so the top-task list never costs context. Measured against real sessions, deferring it roughly halved the per-card cost.
+The card's own render data does not enter the conversation at all. It travels in the tool result's `_meta`, which the host delivers only to the component, so the card draws every metric it shows while the transcript carries just the summary. Measured on a real card, that cuts what the model sees by 79%.
+
+The cross-task breakdown is fetched separately by the rendered card through `refresh_usage_card`, which updates the card in place without adding a conversation item, so the top-task list never costs context either.
 
 The larger cost is not the card itself but how long it lives. A card stays in conversation history and is re-read on every later turn, so one card early in a 500-turn session is re-read hundreds of times. In one measured week, cards accounted for about 0.65% of raw token usage, and two long sessions produced over 98% of it. Most of those re-reads are cache hits, so the cost against your actual quota is a fraction of the raw number.
 

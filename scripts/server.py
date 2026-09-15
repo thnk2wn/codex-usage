@@ -32,7 +32,9 @@ DASHBOARD_PATH = PLUGIN_ROOT / "assets" / "dashboard.html"
 CARD_PATH = PLUGIN_ROOT / "assets" / "status-card.html"
 # Active Codex tasks cache the MCP resource catalog. Keep this URI stable across
 # plugin reinstalls and use the manifest version cachebuster for UI revisions.
-CARD_RESOURCE_URI = "ui://codex-usage/status-card-v7.html"
+CARD_RESOURCE_URI = "ui://codex-usage/status-card-v8.html"
+# Component-only key. The card payload travels here so it never enters context.
+CARD_REPORT_META_KEY = "codexUsage/report"
 LEGACY_CARD_RESOURCE_URIS = {
     "ui://codex-usage/status-card-v1.html",
     "ui://codex-usage/status-card-v2.html",
@@ -40,6 +42,7 @@ LEGACY_CARD_RESOURCE_URIS = {
     "ui://codex-usage/status-card-v4.html",
     "ui://codex-usage/status-card-v5.html",
     "ui://codex-usage/status-card-v6.html",
+    "ui://codex-usage/status-card-v7.html",
 }
 CARD_HTML = CARD_PATH.read_text(encoding="utf-8")
 _DASHBOARD_SERVER: ThreadingHTTPServer | None = None
@@ -965,6 +968,27 @@ def _tool_result(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _card_tool_result(report: dict[str, Any]) -> dict[str, Any]:
+    """Return a card without putting its render data in the model's context.
+
+    `structuredContent` and `content` are surfaced to the model and persist in
+    the transcript, where an automatic card is then re-read by every later turn.
+    `_meta` is delivered only to the component, so the card renders from the
+    same data while the conversation carries just the summary line.
+
+    A tiny reference stays in `structuredContent` so the card can always
+    re-request its own data if a host does not deliver `_meta`.
+    """
+    return {
+        "content": [{"type": "text", "text": _text_summary(report)}],
+        "structuredContent": {
+            "kind": "usage_card_ref",
+            "threadId": (report.get("thread") or {}).get("id"),
+        },
+        "_meta": {CARD_REPORT_META_KEY: report},
+    }
+
+
 def _handle(method: str, params: dict[str, Any]) -> Any:
     if method == "initialize":
         return {
@@ -1014,7 +1038,7 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
         name = params.get("name")
         arguments = params.get("arguments") or {}
         if name == "show_usage_card":
-            return _tool_result(usage_card(arguments, include_details=False))
+            return _card_tool_result(usage_card(arguments, include_details=False))
         if name == "refresh_usage_card":
             return _tool_result(
                 usage_card(
