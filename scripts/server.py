@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only MCP server for local Codex usage attribution."""
+"""Local MCP server for read-only Codex usage attribution and UI preferences."""
 
 from __future__ import annotations
 
@@ -17,6 +17,8 @@ from typing import Any, Iterable
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import urlopen
 
+from preferences import get_preferences, set_auto_card_interval
+
 try:
     from zoneinfo import ZoneInfo
 except ImportError:  # pragma: no cover - Python 3.8 fallback
@@ -24,17 +26,18 @@ except ImportError:  # pragma: no cover - Python 3.8 fallback
 
 
 SERVER_NAME = "codex-usage"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "0.2.0"
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 DASHBOARD_PATH = PLUGIN_ROOT / "assets" / "dashboard.html"
 CARD_PATH = PLUGIN_ROOT / "assets" / "status-card.html"
-CARD_RESOURCE_URI = "ui://codex-usage/status-card-v6.html"
+CARD_RESOURCE_URI = "ui://codex-usage/status-card-v7.html"
 LEGACY_CARD_RESOURCE_URIS = {
     "ui://codex-usage/status-card-v1.html",
     "ui://codex-usage/status-card-v2.html",
     "ui://codex-usage/status-card-v3.html",
     "ui://codex-usage/status-card-v4.html",
     "ui://codex-usage/status-card-v5.html",
+    "ui://codex-usage/status-card-v6.html",
 }
 CARD_HTML = CARD_PATH.read_text(encoding="utf-8")
 _DASHBOARD_SERVER: ThreadingHTTPServer | None = None
@@ -42,6 +45,12 @@ _DASHBOARD_LOCK = threading.Lock()
 _REPORT_CACHE: dict[tuple[str, bool], tuple[float, dict[str, Any]]] = {}
 _REPORT_CACHE_LOCK = threading.Lock()
 _REPORT_CACHE_TTL_SECONDS = 10
+_CARD_REPORT_CACHE_TTL_SECONDS = 30
+_LIMIT_CACHE: tuple[float, dict[str, Any] | None] | None = None
+_LIMIT_CACHE_LOCK = threading.Lock()
+_LIMIT_CACHE_TTL_SECONDS = 10
+LIVE_REFRESH_INTERVAL_MS = 3_000
+LIVE_REFRESH_SECONDS = 2 * 60
 
 
 def _codex_home() -> Path:
@@ -130,7 +139,7 @@ def _latest_token_event(path_value: str | None) -> dict[str, Any] | None:
     return None
 
 
-def _latest_rate_limit(connection: sqlite3.Connection) -> dict[str, Any] | None:
+def _latest_rate_limit_uncached(connection: sqlite3.Connection) -> dict[str, Any] | None:
     rows = connection.execute(
         "SELECT rollout_path FROM threads ORDER BY updated_at DESC LIMIT 40"
     ).fetchall()
@@ -163,6 +172,20 @@ def _latest_rate_limit(connection: sqlite3.Connection) -> dict[str, Any] | None:
         "planType": limits.get("plan_type") or limits.get("planType"),
         "observedAt": event.get("timestamp"),
     }
+
+
+def _latest_rate_limit(connection: sqlite3.Connection) -> dict[str, Any] | None:
+    global _LIMIT_CACHE
+    now = time.monotonic()
+    with _LIMIT_CACHE_LOCK:
+        cached = _LIMIT_CACHE
+    if cached is not None and now - cached[0] < _LIMIT_CACHE_TTL_SECONDS:
+        return cached[1]
+
+    limit = _latest_rate_limit_uncached(connection)
+    with _LIMIT_CACHE_LOCK:
+        _LIMIT_CACHE = (now, limit)
+    return limit
 
 
 def _range_bounds(range_name: str, limit: dict[str, Any] | None) -> tuple[int, int, str]:
@@ -353,6 +376,26 @@ def usage_dashboard(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _cached_usage_dashboard(
+    range_name: str,
+    include_internal: bool,
+    ttl_seconds: int = _REPORT_CACHE_TTL_SECONDS,
+) -> dict[str, Any]:
+    cache_key = (range_name, include_internal)
+    now = time.monotonic()
+    with _REPORT_CACHE_LOCK:
+        cached = _REPORT_CACHE.get(cache_key)
+    if cached is not None and now - cached[0] < ttl_seconds:
+        return cached[1]
+
+    dashboard = usage_dashboard(
+        {"range": range_name, "include_internal": include_internal}
+    )
+    with _REPORT_CACHE_LOCK:
+        _REPORT_CACHE[cache_key] = (now, dashboard)
+    return dashboard
+
+
 def current_conversation_usage(arguments: dict[str, Any]) -> dict[str, Any]:
     thread_id = (
         arguments.get("thread_id")
@@ -447,7 +490,19 @@ def current_conversation_usage(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def usage_card(arguments: dict[str, Any]) -> dict[str, Any]:
     current = current_conversation_usage(arguments)
-    dashboard = usage_dashboard({"range": "current_window", "include_internal": False})
+    dashboard = _cached_usage_dashboard(
+        "current_window", False, _CARD_REPORT_CACHE_TTL_SECONDS
+    )
+    now = datetime.now(timezone.utc)
+    live_requested = bool(arguments.get("live", True))
+    requested_deadline = arguments.get("live_until_epoch_ms")
+    if isinstance(requested_deadline, (int, float)):
+        live_until_epoch_ms = int(requested_deadline)
+    else:
+        live_until_epoch_ms = int(
+            (now + timedelta(seconds=LIVE_REFRESH_SECONDS)).timestamp() * 1000
+        )
+    live_enabled = live_requested and live_until_epoch_ms > int(now.timestamp() * 1000)
     context_percent = current["context"]["usedPercent"]
     context_level = "normal"
     if context_percent is not None and context_percent >= 90:
@@ -476,7 +531,8 @@ def usage_card(arguments: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "kind": "usage_card",
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generatedAt": now.isoformat(),
+        "automatic": bool(arguments.get("automatic", False)),
         "thread": current["thread"],
         "sessionUsage": current["ownUsage"],
         "latestTurn": current["latestTurn"],
@@ -506,6 +562,12 @@ def usage_card(arguments: dict[str, Any]) -> dict[str, Any]:
             for task in dashboard["tasks"][:5]
         ],
         "alerts": alerts,
+        "preferences": get_preferences(),
+        "liveRefresh": {
+            "enabled": live_enabled,
+            "intervalMs": LIVE_REFRESH_INTERVAL_MS,
+            "untilEpochMs": live_until_epoch_ms,
+        },
         "notice": "Raw local token counters are not an authoritative quota ledger.",
     }
 
@@ -514,18 +576,7 @@ def _dashboard_payload(query: dict[str, list[str]]) -> dict[str, Any]:
     range_name = (query.get("range") or ["current_window"])[0]
     include_internal = (query.get("include_internal") or ["false"])[0].lower() == "true"
     thread_id = (query.get("thread_id") or [""])[0] or None
-    cache_key = (range_name, include_internal)
-    now = time.monotonic()
-    with _REPORT_CACHE_LOCK:
-        cached = _REPORT_CACHE.get(cache_key)
-    if cached is not None and now - cached[0] < _REPORT_CACHE_TTL_SECONDS:
-        dashboard = cached[1]
-    else:
-        dashboard = usage_dashboard(
-            {"range": range_name, "include_internal": include_internal}
-        )
-        with _REPORT_CACHE_LOCK:
-            _REPORT_CACHE[cache_key] = (now, dashboard)
+    dashboard = _cached_usage_dashboard(range_name, include_internal)
     current = None
     current_error = None
     try:
@@ -542,7 +593,7 @@ def _dashboard_payload(query: dict[str, list[str]]) -> dict[str, Any]:
 
 
 class _DashboardHandler(BaseHTTPRequestHandler):
-    server_version = "CodexUsage/0.1"
+    server_version = "CodexUsage/0.2"
 
     def _send(self, status: int, content_type: str, body: bytes) -> None:
         self.send_response(status)
@@ -629,6 +680,24 @@ def open_usage_dashboard(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def update_auto_card_interval(arguments: dict[str, Any]) -> dict[str, Any]:
+    interval_seconds = int(arguments.get("interval_seconds"))
+    preferences = set_auto_card_interval(interval_seconds)
+    return {
+        "kind": "usage_preferences",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        **preferences,
+    }
+
+
+def usage_preferences() -> dict[str, Any]:
+    return {
+        "kind": "usage_preferences",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        **get_preferences(),
+    }
+
+
 def _tool_descriptor(
     name: str,
     description: str,
@@ -636,6 +705,7 @@ def _tool_descriptor(
     *,
     meta: dict[str, Any] | None = None,
     required: list[str] | None = None,
+    read_only: bool = True,
 ) -> dict[str, Any]:
     descriptor = {
         "name": name,
@@ -647,7 +717,7 @@ def _tool_descriptor(
             "additionalProperties": False,
         },
         "annotations": {
-            "readOnlyHint": True,
+            "readOnlyHint": read_only,
             "idempotentHint": True,
             "openWorldHint": False,
         },
@@ -667,7 +737,17 @@ TOOLS = [
             "thread_id": {
                 "type": "string",
                 "description": "The current Codex task/thread ID from the task context.",
-            }
+            },
+            "live": {
+                "type": "boolean",
+                "default": True,
+                "description": "Refresh the card briefly while the current turn is active.",
+            },
+            "automatic": {
+                "type": "boolean",
+                "default": False,
+                "description": "Marks a card requested by the plugin's rate-limited prompt hook.",
+            },
         },
         meta={
             "ui": {"resourceUri": CARD_RESOURCE_URI},
@@ -676,6 +756,39 @@ TOOLS = [
             "openai/toolInvocation/invoked": "Usage ready",
         },
         required=["thread_id"],
+    ),
+    _tool_descriptor(
+        "refresh_usage_card",
+        "Refresh the values inside an already-rendered Codex Usage card without creating another inline card.",
+        {
+            "thread_id": {
+                "type": "string",
+                "description": "The Codex task/thread ID displayed by the existing card.",
+            },
+            "live_until_epoch_ms": {
+                "type": "number",
+                "description": "The original card's fixed live-refresh deadline.",
+            },
+        },
+        required=["thread_id", "live_until_epoch_ms"],
+    ),
+    _tool_descriptor(
+        "get_usage_preferences",
+        "Read the current automatic-card interval shared by all Codex Usage cards.",
+        {},
+    ),
+    _tool_descriptor(
+        "set_auto_card_interval",
+        "Set how often a new automatic inline usage card may appear in the same Codex task.",
+        {
+            "interval_seconds": {
+                "type": "integer",
+                "enum": [-1, 0, 30, 60, 300, 900],
+                "description": "-1 turns automatic cards off; 0 allows every user turn.",
+            }
+        },
+        required=["interval_seconds"],
+        read_only=False,
     ),
     _tool_descriptor(
         "open_usage_dashboard",
@@ -728,6 +841,13 @@ def _text_summary(report: dict[str, Any]) -> str:
             f"{report['thread']['name']}: {report['ownUsage']['totalTokens']:,} raw tokens "
             f"in the conversation and {report['subagentTokens']:,} in subagents."
         )
+    if report["kind"] == "usage_preferences":
+        interval = int(report["autoCardIntervalSeconds"])
+        if interval < 0:
+            return "Automatic Codex Usage cards are off."
+        if interval == 0:
+            return "Automatic Codex Usage cards may appear on every user turn."
+        return f"Automatic Codex Usage cards are limited to one every {interval} seconds per task."
     if report["kind"] == "usage_card":
         context = report["context"].get("usedPercent")
         context_text = f"{context:.0f}%" if context is not None else "—"
@@ -824,6 +944,22 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
         arguments = params.get("arguments") or {}
         if name == "show_usage_card":
             return _tool_result(usage_card(arguments))
+        if name == "refresh_usage_card":
+            return _tool_result(
+                usage_card(
+                    {
+                        "thread_id": arguments.get("thread_id"),
+                        "live": True,
+                        "live_until_epoch_ms": arguments.get(
+                            "live_until_epoch_ms"
+                        ),
+                    }
+                )
+            )
+        if name == "get_usage_preferences":
+            return _tool_result(usage_preferences())
+        if name == "set_auto_card_interval":
+            return _tool_result(update_auto_card_interval(arguments))
         if name == "open_usage_dashboard":
             return _tool_result(open_usage_dashboard(arguments))
         if name == "current_conversation_usage":

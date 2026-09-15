@@ -10,12 +10,13 @@
     html, body { min-height: 48px; }
     body { margin: 0; color: #17211f; background: transparent; }
     .card { border: 1px solid #dce4e1; border-radius: 12px; overflow: hidden; background: #fbfdfc; }
-    .card > details > summary { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 11px 13px; cursor: pointer; list-style: none; }
+    .card > details > summary { display: grid; grid-template-columns: auto 1fr auto auto; gap: 12px; align-items: center; padding: 11px 13px; cursor: pointer; list-style: none; }
     summary::-webkit-details-marker { display: none; }
     .mark { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 7px; color: white; background: #0f766e; font-weight: 750; font-size: 12px; }
     .line { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 10px; }
     .title { font-size: 13px; font-weight: 720; }
     .status { color: #52615d; font-size: 12px; font-variant-numeric: tabular-nums; }
+    .snapshot { color: #71807c; font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .chevron { color: #71807c; transition: transform .16s ease; }
     .card > details[open] > summary .chevron { transform: rotate(180deg); }
     .detail { border-top: 1px solid #e5ebe9; padding: 13px; }
@@ -48,8 +49,12 @@
     .task-breakdown { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 10px; padding: 4px 0 8px; color: #64736f; font-size: 10px; line-height: 1.35; }
     .task-breakdown strong { color: inherit; font-variant-numeric: tabular-nums; }
     .note { margin: 12px 0 0; color: #71807c; font-size: 10px; line-height: 1.35; }
+    .settings { margin-top: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 9px; color: #64736f; font-size: 10px; }
+    .settings label { font-weight: 650; }
+    .settings select { border: 1px solid #ccd8d4; border-radius: 6px; padding: 4px 22px 4px 7px; color: inherit; background: #f0f5f3; font: inherit; }
+    .settings .saved { min-width: 34px; color: #0f766e; }
     .loading { padding: 12px 14px; color: #64736f; font-size: 12px; }
-    @media (max-width: 520px) { .grid { grid-template-columns: repeat(2, 1fr); } .status { flex-basis: 100%; } }
+    @media (max-width: 520px) { .card > details > summary { gap: 8px; } .grid { grid-template-columns: repeat(2, 1fr); } .status { flex-basis: 100%; } }
     @media (prefers-color-scheme: dark) {
       body { color: #edf4f1; }
       .card { background: #151b1a; border-color: #34403d; }
@@ -57,11 +62,13 @@
       .detail { border-color: #34403d; }
       .meter { background: #34403d; }
       .metric { background: #202927; }
-      .metric span, .chevron, .task-row .share, .task-caret, .task-breakdown, .pace span, .note, .loading { color: #9caaa6; }
+      .metric span, .chevron, .snapshot, .task-row .share, .task-caret, .task-breakdown, .pace span, .note, .settings, .loading { color: #9caaa6; }
       .alert { background: #352a18; }
       .alert.notice, .pace { background: #202927; }
       .pace.risk { background: #352a18; }
       .task-row { border-color: #34403d; }
+      .settings select { border-color: #34403d; background: #202927; }
+      .settings .saved { color: #5eead4; }
     }
   </style>
 </head>
@@ -73,11 +80,22 @@
       const pendingRequests = new Map();
       let nextRequestId = 1;
       let reportedHeight = 0;
+      let initialized = false;
+      let latestData = null;
+      let refreshTimer = null;
+      let preferenceChannel = null;
+      try {
+        if (typeof BroadcastChannel === 'function') preferenceChannel = new BroadcastChannel('codex-usage-preferences-v1');
+      } catch (_error) {
+        // Some sandboxed clients isolate each card; expanding still reloads the preference.
+      }
       const compact = n => new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(Number(n || 0));
       const pct = n => n == null ? '—' : `${Number(n).toFixed(Number(n) < 10 ? 1 : 0)}%`;
       const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
       const when = epoch => epoch ? new Intl.DateTimeFormat(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }).format(new Date(epoch * 1000)) : '—';
+      const clock = iso => iso ? new Intl.DateTimeFormat(undefined, { hour:'numeric', minute:'2-digit' }).format(new Date(iso)) : '—';
       const metric = (label, value, help) => `<div class="metric" title="${esc(help)}"><span>${esc(label)}<i class="info" aria-label="${esc(help)}">i</i></span><strong>${esc(value)}</strong></div>`;
+      const structured = result => result?.structuredContent || result?.result?.structuredContent || result?.toolResult?.structuredContent;
       const notify = (method, params = {}) => {
         window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
       };
@@ -95,8 +113,51 @@
           window.openai?.notifyIntrinsicHeight?.(height);
         });
       };
+      const applyPreferences = preferences => {
+        if (!preferences || !Number.isInteger(preferences.autoCardIntervalSeconds)) return;
+        if (latestData) latestData.preferences = preferences;
+        const select = root.querySelector('#auto-card-interval');
+        if (select && !select.disabled) select.value = String(preferences.autoCardIntervalSeconds);
+      };
+      const refreshPreferences = async () => {
+        if (!initialized) return;
+        try {
+          const result = await request('tools/call', { name: 'get_usage_preferences', arguments: {} });
+          applyPreferences(structured(result));
+        } catch (_error) {
+          // A historical usage snapshot remains useful if its live setting cannot load.
+        }
+      };
+      preferenceChannel?.addEventListener('message', event => applyPreferences(event.data));
+      const scheduleRefresh = data => {
+        if (refreshTimer) window.clearTimeout(refreshTimer);
+        refreshTimer = null;
+        const live = data?.liveRefresh || {};
+        const deadline = Number(live.untilEpochMs || 0);
+        if (!initialized || !live.enabled || !data?.thread?.id || deadline <= Date.now()) return;
+        const interval = Math.max(1000, Number(live.intervalMs || 3000));
+        refreshTimer = window.setTimeout(async () => {
+          if (document.visibilityState === 'hidden') {
+            scheduleRefresh(data);
+            return;
+          }
+          try {
+            const result = await request('tools/call', {
+              name: 'refresh_usage_card',
+              arguments: { thread_id: data.thread.id, live_until_epoch_ms: deadline }
+            });
+            render(structured(result));
+          } catch (_error) {
+            refreshTimer = null;
+          }
+        }, Math.min(interval, Math.max(0, deadline - Date.now())));
+      };
       function render(data) {
         if (!data || data.kind !== 'usage_card') return;
+        latestData = data;
+        const existing = root.querySelector(':scope > details');
+        const expanded = existing ? existing.open : Boolean(window.openai?.widgetState?.expanded);
+        const expandedTasks = new Set(Array.from(root.querySelectorAll('.task-row[open]')).map(row => row.dataset.taskId));
         const context = data.context || {};
         const session = data.sessionUsage || {};
         const latest = data.latestTurn || {};
@@ -104,7 +165,7 @@
         const windowDays = Number(limit.windowMinutes || 0) / 1440;
         const windowName = Number.isInteger(windowDays) && windowDays > 0 ? `${windowDays}-day` : 'Account';
         const account = limit.usedPercent == null ? `${windowName} —` : `${windowName} ${pct(limit.usedPercent)}`;
-        const taskRows = (data.topTasks || []).map(task => `<details class="task-row"><summary title="Show token composition"><span class="name">${esc(task.name)}</span><strong>${compact(task.totalTokens)}</strong><span class="share">${pct(task.sharePercent)}</span><span class="task-caret">⌄</span></summary><div class="task-breakdown"><span>Input <strong>${compact(task.inputTokens)}</strong></span><span>Cached <strong>${pct(task.cachedPercent)}</strong></span><span>Output <strong>${compact(task.outputTokens)}</strong></span><span>Reasoning <strong>${compact(task.reasoningOutputTokens)}</strong></span><span>Responses <strong>${compact(task.responses)}</strong></span><span>${esc(task.model || task.source || 'unknown')}</span></div></details>`).join('');
+        const taskRows = (data.topTasks || []).map(task => `<details class="task-row" data-task-id="${esc(task.id)}" ${expandedTasks.has(String(task.id)) ? 'open' : ''}><summary title="Show token composition"><span class="name">${esc(task.name)}</span><strong>${compact(task.totalTokens)}</strong><span class="share">${pct(task.sharePercent)}</span><span class="task-caret">⌄</span></summary><div class="task-breakdown"><span>Input <strong>${compact(task.inputTokens)}</strong></span><span>Cached <strong>${pct(task.cachedPercent)}</strong></span><span>Output <strong>${compact(task.outputTokens)}</strong></span><span>Reasoning <strong>${compact(task.reasoningOutputTokens)}</strong></span><span>Responses <strong>${compact(task.responses)}</strong></span><span>${esc(task.model || task.source || 'unknown')}</span></div></details>`).join('');
         const alerts = (data.alerts || []).map(alert => `<div class="alert ${esc(alert.level)}"><strong>${esc(alert.title)}</strong>${esc(alert.detail)}</div>`).join('');
         const pace = data.pace;
         let paceRow = '';
@@ -114,12 +175,13 @@
           const detail = `${pct(pace.elapsedPercent)} of time elapsed · ${pct(limit.usedPercent)} used`;
           paceRow = `<div class="pace ${risk ? 'risk' : ''}" title="Projection uses the average aggregate usage rate since this account window began; it will change as your pace changes."><div><strong>${esc(headline)}</strong><span>${esc(detail)}</span></div><strong class="projection">${pct(pace.projectedPercent)} projected</strong></div>`;
         }
-        const expanded = Boolean(window.openai?.widgetState?.expanded);
+        const interval = Number(data.preferences?.autoCardIntervalSeconds ?? 60);
         root.innerHTML = `
           <details ${expanded ? 'open' : ''}>
             <summary>
               <span class="mark">CU</span>
               <span class="line"><span class="title">Codex usage</span><span class="status">Context ${pct(context.usedPercent)} · Task ${compact(data.combinedTokens)} raw · ${account}</span></span>
+              <span class="snapshot" title="Snapshot time. This card refreshes briefly, then freezes.">${esc(clock(data.generatedAt))}</span>
               <span class="chevron" aria-hidden="true">⌄</span>
             </summary>
             <section class="detail">
@@ -140,14 +202,48 @@
               <h3>Top 5 tasks this limit window · click a row for composition</h3>
               <div class="tasks">${taskRows || '<span class="note">No recorded activity.</span>'}</div>
               <p class="note">Raw local token counters are attribution clues, not an authoritative quota ledger. Cached input, model choice, reasoning, and internal work may be weighted differently.</p>
+              <div class="settings" title="Controls the minimum time between new automatic cards in each task. Existing cards remain historical snapshots.">
+                <label for="auto-card-interval">Automatic cards</label>
+                <select id="auto-card-interval">
+                  <option value="0" ${interval === 0 ? 'selected' : ''}>Every turn</option>
+                  <option value="30" ${interval === 30 ? 'selected' : ''}>30 seconds</option>
+                  <option value="60" ${interval === 60 ? 'selected' : ''}>1 minute</option>
+                  <option value="300" ${interval === 300 ? 'selected' : ''}>5 minutes</option>
+                  <option value="900" ${interval === 900 ? 'selected' : ''}>15 minutes</option>
+                  <option value="-1" ${interval < 0 ? 'selected' : ''}>Off</option>
+                </select>
+                <span id="preference-status" class="saved" aria-live="polite"></span>
+              </div>
             </section>
           </details>`;
         const details = root.querySelector('details');
         details.addEventListener('toggle', () => {
           window.openai?.setWidgetState?.({ expanded: details.open });
+          if (details.open) refreshPreferences();
           reportHeight();
         });
+        const intervalSelect = root.querySelector('#auto-card-interval');
+        intervalSelect.addEventListener('change', async () => {
+          const status = root.querySelector('#preference-status');
+          intervalSelect.disabled = true;
+          status.textContent = 'Saving…';
+          try {
+            const result = await request('tools/call', {
+              name: 'set_auto_card_interval',
+              arguments: { interval_seconds: Number(intervalSelect.value) }
+            });
+            const preferences = structured(result);
+            applyPreferences(preferences);
+            if (preferences?.kind === 'usage_preferences') preferenceChannel?.postMessage(preferences);
+            status.textContent = 'Saved';
+          } catch (_error) {
+            status.textContent = 'Could not save';
+          } finally {
+            intervalSelect.disabled = false;
+          }
+        });
         reportHeight();
+        scheduleRefresh(data);
       }
 
       window.addEventListener('openai:set_globals', event => render(event.detail?.globals?.toolOutput));
@@ -164,15 +260,16 @@
         }
         if (message.method === 'ui/notifications/tool-result') {
           const params = message.params || {};
-          render(params.structuredContent || params.result?.structuredContent || params.toolResult?.structuredContent);
+          render(structured(params));
         }
       }, { passive: true });
       render(window.openai?.toolOutput);
       request('ui/initialize', {
-        appInfo: { name: 'codex-usage', version: '0.1.0' },
+        appInfo: { name: 'codex-usage', version: '0.2.0' },
         appCapabilities: { availableDisplayModes: ['inline'] },
         protocolVersion: '2025-11-21'
       }).then(() => {
+        initialized = true;
         notify('ui/notifications/initialized');
         render(window.openai?.toolOutput);
         reportHeight();

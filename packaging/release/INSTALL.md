@@ -8,6 +8,6 @@ From Terminal, run:
 bash ./install.sh
 ```
 
-Then start a new Codex task so the plugin's skill and tools are loaded.
+Then start a new Codex task so the plugin's skill, tools, and automatic-card hook are loaded. Review and trust the hook when Codex prompts; in the CLI you can also use `/hooks`. Automatic cards remain off until the hook is trusted, while on-demand cards continue to work.
 
 The installer registers this extracted directory as the `codex-usage-release` marketplace and installs `codex-usage` from it. Keep the extracted directory if you want Codex to continue recognizing the marketplace source.

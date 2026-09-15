@@ -5,15 +5,17 @@ description: Show Codex usage for the current conversation or across local tasks
 
 # Codex Usage
 
-Use the plugin's read-only tools instead of querying Codex's private SQLite database or session JSONL files directly.
+Use the plugin's tools instead of querying Codex's private SQLite database or session JSONL files directly. Usage reads are local and read-only; only the automatic-card preference writes plugin state.
 
 ## Native usage card
 
-Call `show_usage_card` by default when the user asks to show, display, view, or check Codex usage. Always pass the current Codex task ID from the task context as `thread_id`; never make an initial call without it. The card first appears as a compact usage-data row. The user can click that row to expand current-context pressure, latest-response tokens, cached input, direct child tasks, account reset, average-window pace, and the top five tasks. Each top-task row expands to show its token composition.
+Call `show_usage_card` by default when the user asks to show, display, view, or check Codex usage. Always pass the current Codex task ID from the task context as `thread_id`; never make an initial call without it. The card first appears as a compact usage-data row with a local snapshot time. The user can click that row to expand current-context pressure, latest-response tokens, cached input, direct child tasks, account reset, average-window pace, the top five tasks, and the automatic-card interval. Each top-task row expands to show its token composition.
 
 Mobile Remote currently preserves the tool result but may not render the MCP App iframe. The text fallback is intentionally one line and tells the user to say `usage details`. When the user asks for those details after a text-only result, call `show_usage_card` again and summarize its structured result in text: context input/window, latest output, cached input, subagents, account usage/reset, alerts, and top tasks. Do not claim that the one-line mobile result is clickable or expandable.
 
-Do not render the card after unrelated replies. MCP UI is tool-result UI and cannot be pushed independently by a background daemon. Do not claim automatic popup alerts. The card may highlight context pressure or a large latest response when it is invoked.
+The plugin's trusted `UserPromptSubmit` hook may add developer context saying an automatic card is due. When it does, call `show_usage_card` exactly once before other work with the supplied `thread_id`, `live: true`, and `automatic: true`, then continue the user's request without narrating the card call. The hook rate-limits this per task (one minute by default), so do not second-guess or duplicate it. If the hook does not say a card is due, do not render one after an unrelated reply.
+
+Each newly rendered card refreshes its own values for up to two minutes while the turn is active, then freezes as a historical snapshot. It never rewrites an older card. The expanded card can set the automatic-card cadence, applied independently per task, to every turn, 30 seconds, 1 minute, 5 minutes, 15 minutes, or off. Do not claim background popup alerts when no user turn is running.
 
 ## Optional dashboard
 

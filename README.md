@@ -34,7 +34,7 @@ A ChatGPT workspace admin is required to distribute this plugin automatically ac
 
 1. Make sure the GitHub account used for the import can read this repository and has any required organization approval.
 2. In ChatGPT, open **Admin → Plugins**, then choose **Add → Import marketplace**.
-3. Use `https://github.com/thnk2wn/codex-usage` as the source. Leave **Path** empty. Use `main` for automatic updates, or a release tag such as `v0.1.0` for a pinned rollout.
+3. Use `https://github.com/thnk2wn/codex-usage` as the source. Leave **Path** empty. Use `main` for automatic updates, or a release tag such as `v0.2.0` for a pinned rollout.
 4. Review the imported plugin and set its installation policy to **Installed** for the roles that should receive it. Use **Available** instead if members should opt in.
 5. Use **Sync now** when you want to pull an update immediately; otherwise GitHub marketplaces sync daily.
 
@@ -62,7 +62,9 @@ See [OpenAI's plugin submission documentation](https://developers.openai.com/plu
 
 ## UI surfaces
 
-- `show_usage_card` renders a compact native usage-data row directly in the conversation, without a separate tool disclosure after loading. Clicking the row expands clearly defined token metrics, a limit-window pace projection, a subdued compaction notice, and the top five tasks. Each task row expands to show why its raw total is large.
+- Automatic cards are rate-limited to one per task per minute by default. A qualifying user prompt creates a **new** compact snapshot near that turn; it refreshes in place for up to two minutes while work continues, then freezes in conversation history. Older cards are never rewritten.
+- The minimized header includes the snapshot time. Clicking it expands clearly defined token metrics, a limit-window pace projection, a subdued compaction notice, the top five tasks, and a global automatic-card frequency control (every turn, 30 seconds, 1/5/15 minutes, or off). Open card instances synchronize that preference when the client permits it, and every historical card rechecks it when expanded.
+- `show_usage_card` can also render a card on demand. `refresh_usage_card` is used only by an already-rendered card, so live updates do not add more conversation items.
 - Mobile Remote falls back to a single-line status result when it does not render the MCP App iframe; say `usage details` for a text breakdown.
 - `open_usage_dashboard` starts the optional private localhost dashboard for a larger cross-task view.
 - `current_conversation_usage` returns a concise snapshot for the active conversation when a panel is not needed.
@@ -70,9 +72,11 @@ See [OpenAI's plugin submission documentation](https://developers.openai.com/plu
 
 ## Data and privacy
 
-The MCP server reads `~/.codex/state_5.sqlite` and the rollout files already referenced by that database. It is read-only, binds its optional dashboard only to `127.0.0.1`, uses no external network access, and stores no copy of task content. Task names are displayed locally in the card and dashboard.
+The MCP server reads `~/.codex/state_5.sqlite` and the rollout files already referenced by that database without modifying them. It binds its optional dashboard only to `127.0.0.1`, uses no external network access, and stores no copy of task content. Task names are displayed locally in the card and dashboard. The only plugin writes are the selected automatic-card preference and per-task throttle timestamps under `~/.codex/codex-usage/`.
 
-Cards render when the tool is invoked. Codex hooks cannot independently push unsolicited UI into an idle conversation, so the plugin does not claim background popup alerts.
+Cards are still MCP tool-result UI: the plugin's `UserPromptSubmit` hook asks Codex to invoke the card at the start of a qualifying user turn. It cannot push unsolicited UI into an idle conversation. The hook stores only its per-task last-card time, and preferences live in `~/.codex/codex-usage/`.
+
+Plugin hooks must be reviewed and trusted before Codex will run them. After installation or an update, start a new task and follow the app's hook-review prompt (or use `/hooks` in the CLI). Until the hook is trusted, cards remain available on demand but will not appear automatically.
 
 The numbers are raw local token counters, not a server-authoritative quota ledger. The aggregate usage percentage is the latest coarse snapshot recorded in local session metadata.
 

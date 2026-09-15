@@ -26,10 +26,12 @@ cp "$repo_root/.mcp.json" "$plugin_root/.mcp.json"
 cp "$repo_root/LICENSE" "$plugin_root/LICENSE"
 cp "$repo_root/README.md" "$plugin_root/README.md"
 cp -R "$repo_root/assets" "$plugin_root/assets"
+cp -R "$repo_root/hooks" "$plugin_root/hooks"
 mkdir -p "$plugin_root/scripts"
 cp "$repo_root/scripts/server.py" "$plugin_root/scripts/server.py"
+cp "$repo_root/scripts/preferences.py" "$plugin_root/scripts/preferences.py"
 cp -R "$repo_root/skills" "$plugin_root/skills"
-chmod +x "$bundle_root/install.sh" "$plugin_root/scripts/server.py"
+chmod +x "$bundle_root/install.sh" "$plugin_root/hooks/auto_usage_card.py" "$plugin_root/scripts/server.py"
 
 if [[ -e "$output_path" ]]; then
   rm -f "$output_path"
