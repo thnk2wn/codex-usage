@@ -28,6 +28,14 @@ For teammates, grant read access to this repository and send them the two instal
 
 For wider organization distribution, transfer or mirror the repository into the organization and change the Git URL in the install command and `.claude-plugin/marketplace.json`. A public or OpenAI-curated marketplace listing can remain a later step after the plugin has been tested more broadly.
 
+## Public marketplace
+
+This build is intentionally not submitted to OpenAI's universal Plugins Directory. Public submission requires a verified publisher, production listing and policy materials, reproducible test cases, automated scanning, and OpenAI review. MCP-backed submissions normally also require a stable public HTTPS server.
+
+Codex Usage instead runs its MCP server locally because its core purpose is reading local Codex metadata without uploading it. Publishing it universally would therefore require either explicit OpenAI support for a local MCP design or a privacy-sensitive architectural change. The private Git marketplace above keeps the current local-only behavior intact.
+
+See [OpenAI's plugin submission documentation](https://developers.openai.com/plugins/deploy/submission) for the current public review requirements.
+
 ## UI surfaces
 
 - `show_usage_card` renders a compact native usage-data row directly in the conversation, without a separate tool disclosure after loading. Clicking the row expands clearly defined token metrics, a limit-window pace projection, a subdued compaction notice, and the top five tasks. Each task row expands to show why its raw total is large.
