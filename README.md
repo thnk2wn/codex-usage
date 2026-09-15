@@ -105,9 +105,9 @@ After updating a local copy of the plugin, reinstall it before measuring. A stal
 
 Practical consequence: **session length matters far more than card frequency.** Lowering the cadence in a short session saves very little. Avoiding automatic cards in very long sessions saves a lot.
 
-To reduce or eliminate the cost:
+To reduce the cost:
 
-- **Zero in-conversation cost.** Set automatic cards to **off** from any expanded card, then run `open_usage_dashboard` once and leave the browser tab open. The dashboard refreshes itself every 20 seconds directly from local data and never enters the model's context. You keep full visibility at no token cost.
+- **Zero ongoing cost.** Set automatic cards to **off** from any expanded card, then run `open_usage_dashboard` once and leave the browser tab open. Opening it returns a tool result like any other tool, so it costs roughly 100 tokens one time. Every refresh after that is served from the browser to the local server every 20 seconds and never enters the model's context, so the ongoing cost really is zero.
 - **Lower the cadence.** Moving from every 5 minutes to every 15 minutes cuts card volume roughly threefold. Use this in long sessions especially.
 - **Ask on demand.** With automatic cards off, `show_usage_card` still works whenever you want a snapshot, and `current_conversation_usage` returns a much smaller text-only answer.
 
