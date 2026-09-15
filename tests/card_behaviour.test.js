@@ -141,6 +141,43 @@ test('an unrelated globals update does not restore the stale snapshot', async ()
   assert.ok(host.root.innerHTML.includes('FRESH'), 'fresh data should survive');
 });
 
+test('reads a payload wrapped in a nested tool-result envelope', async () => {
+  const host = boot();
+  await initialize(host);
+  host.fire('openai:set_globals', {
+    globals: {
+      toolResponseMetadata: {
+        mcp_tool_result: { _meta: { [META_KEY]: report({ thread: { id: 'task-1', name: 'WRAPPED' } }) } }
+      }
+    }
+  });
+  assert.ok(host.root.innerHTML.includes('WRAPPED'), 'nested envelope payload should render');
+});
+
+test('reads a payload under the call_tool_result envelope', async () => {
+  const host = boot();
+  await initialize(host);
+  host.fire('openai:set_globals', {
+    globals: {
+      call_tool_result: { _meta: { [META_KEY]: report({ thread: { id: 'task-1', name: 'ALTKEY' } }) } }
+    }
+  });
+  assert.ok(host.root.innerHTML.includes('ALTKEY'), 'alternate envelope payload should render');
+});
+
+test('a wrapped payload does not fall through to the refresh fallback', async () => {
+  const host = boot();
+  await initialize(host);
+  host.fire('openai:set_globals', {
+    globals: {
+      toolResponseMetadata: { mcp_tool_result: { _meta: { [META_KEY]: report() } } },
+      toolOutput: { kind: 'usage_card_ref', threadId: 'task-1' }
+    }
+  });
+  const calls = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
+  assert.strictEqual(calls.length, 0, 'should not hydrate when the payload was delivered');
+});
+
 test('a reference with no metadata triggers hydration', async () => {
   const host = boot();
   await initialize(host);

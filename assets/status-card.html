@@ -124,13 +124,33 @@
       // snapshot and would overwrite freshly refreshed data with a stale one.
       // Scope strictly: an event payload is read alone, window.openai only when
       // no payload was supplied.
+      // Hosts may hand over the whole tool result rather than its metadata map,
+      // in which case the payload sits inside that result's own _meta. Check the
+      // nested envelopes first, then the flat aliases, so a wrapped payload is
+      // found instead of falling through to the refresh fallback.
+      const ENVELOPE_KEYS = [
+        'mcp_tool_result', 'call_tool_result', 'toolResult', 'tool_result', 'result'
+      ];
       const metaCandidates = globals => {
         const source = globals || window.openai;
-        if (!source) return [];
-        return [
+        if (!source || typeof source !== 'object') return [];
+        const bases = [
           source.toolResponseMetadata, source.toolResponseMeta,
-          source.toolOutputMetadata, source.toolMeta, source._meta
+          source.toolOutputMetadata, source.toolMeta, source._meta, source
         ];
+        const candidates = [];
+        for (const base of bases) {
+          if (!base || typeof base !== 'object') continue;
+          for (const key of ENVELOPE_KEYS) {
+            const nested = base[key];
+            if (nested && typeof nested === 'object') {
+              if (nested._meta && typeof nested._meta === 'object') candidates.push(nested._meta);
+              candidates.push(nested);
+            }
+          }
+          candidates.push(base);
+        }
+        return candidates;
       };
       const reportFromMeta = globals => {
         for (const source of metaCandidates(globals)) {
