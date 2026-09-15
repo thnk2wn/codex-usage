@@ -254,8 +254,10 @@ def _resolve_event_epochs(
     if len(raw_epochs) < 2 or span is None:
         return raw_epochs
 
-    distinct = {epoch for epoch in raw_epochs if epoch is not None}
-    if len(distinct) != 1:
+    # A missing or unparseable stamp is not the collapsed-session signature, and
+    # inventing a time for it would count usage the raw path skips. Require every
+    # event to carry the same valid epoch before spreading any of them.
+    if any(epoch is None for epoch in raw_epochs) or len(set(raw_epochs)) != 1:
         return raw_epochs
 
     started_at, ended_at = span

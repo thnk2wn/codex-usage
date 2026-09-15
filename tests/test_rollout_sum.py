@@ -50,6 +50,18 @@ class ResolveEventEpochsTest(unittest.TestCase):
         raw = [100.0, 100.0]
         self.assertEqual(server._resolve_event_epochs(raw, (500, 500)), raw)
 
+    def test_missing_epoch_is_not_treated_as_collapsed(self) -> None:
+        raw = [100.0, None]
+        self.assertEqual(server._resolve_event_epochs(raw, (0, 400)), raw)
+
+    def test_all_missing_epochs_are_left_alone(self) -> None:
+        raw = [None, None]
+        self.assertEqual(server._resolve_event_epochs(raw, (0, 400)), raw)
+
+    def test_collapsed_run_with_one_missing_epoch_is_left_alone(self) -> None:
+        raw = [100.0, 100.0, None]
+        self.assertEqual(server._resolve_event_epochs(raw, (0, 400)), raw)
+
     def test_collapsed_timestamps_spread_across_the_span(self) -> None:
         raw = [100.0, 100.0, 100.0, 100.0]
         spread = server._resolve_event_epochs(raw, (0, 400))
