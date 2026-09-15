@@ -1,0 +1,185 @@
+// Exercises the shipped card script in a minimal stub host.
+// Run directly: node tests/card_behaviour.test.js
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const assert = require('assert');
+
+const CARD = path.join(__dirname, '..', 'assets', 'status-card.html');
+const SCRIPT = /<script>([\s\S]*)<\/script>/.exec(fs.readFileSync(CARD, 'utf8'))[1];
+const META_KEY = 'codexUsage/report';
+
+function report(overrides) {
+  return Object.assign({
+    kind: 'usage_card',
+    thread: { id: 'task-1', name: 'Test task' },
+    context: { usedPercent: 50, inputTokens: 1, windowTokens: 2 },
+    sessionUsage: { totalTokens: 1, cachedPercent: 0 },
+    latestTurn: { outputTokens: 1, totalTokens: 1 },
+    combinedTokens: 1,
+    subagentCount: 0,
+    subagentTokens: 0,
+    limit: null,
+    pace: null,
+    topTasks: [],
+    alerts: [],
+    detailsLoaded: true,
+    windowUsage: null,
+    preferences: { autoCardEnabled: true, autoCardIntervalSeconds: 300 },
+    liveRefresh: { enabled: false, intervalMs: 3000, untilEpochMs: 0 }
+  }, overrides);
+}
+
+function makeElement() {
+  const element = {
+    innerHTML: '',
+    open: false,
+    dataset: {},
+    disabled: false,
+    value: '',
+    textContent: '',
+    style: {},
+    classList: { add() {}, remove() {}, toggle() {} },
+    addEventListener() {},
+    querySelector: () => makeElement(),
+    querySelectorAll: () => [],
+    getBoundingClientRect: () => ({ height: 10 }),
+    scrollHeight: 10,
+    closest: () => null
+  };
+  return element;
+}
+
+function boot() {
+  const listeners = {};
+  const sent = [];
+  const root = makeElement();
+  const openai = { toolOutput: undefined, notifyIntrinsicHeight() {}, setWidgetState() {} };
+
+  const windowStub = {
+    openai,
+    addEventListener: (type, handler) => { (listeners[type] = listeners[type] || []).push(handler); },
+    removeEventListener() {},
+    requestAnimationFrame: fn => fn(),
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: id => clearTimeout(id),
+    parent: { postMessage: message => sent.push(message) }
+  };
+
+  const context = {
+    window: windowStub,
+    document: {
+      getElementById: () => root,
+      body: { scrollHeight: 10, getBoundingClientRect: () => ({ height: 10 }) },
+      visibilityState: 'visible',
+      querySelector: () => makeElement(),
+      querySelectorAll: () => [],
+      addEventListener() {}
+    },
+    Intl,
+    Date,
+    Math,
+    JSON,
+    Number,
+    String,
+    Object,
+    Array,
+    Set,
+    Map,
+    Promise,
+    console,
+    setTimeout,
+    clearTimeout
+  };
+  context.globalThis = context;
+  vm.createContext(context);
+  vm.runInContext(SCRIPT, context);
+
+  const fire = (type, detail) => (listeners[type] || []).forEach(fn => fn({ detail, source: windowStub.parent, data: detail }));
+  const reply = (id, result) => fire('message', { jsonrpc: '2.0', id, result });
+  return { listeners, sent, root, openai, fire, reply, windowStub };
+}
+
+function initialize(host) {
+  // The card sends ui/initialize on boot; answer it so `initialized` flips true.
+  const init = host.sent.find(m => m.method === 'ui/initialize');
+  assert.ok(init, 'card should send ui/initialize');
+  host.reply(init.id, {});
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+const tests = [];
+const test = (name, fn) => tests.push([name, fn]);
+
+test('renders from component-only metadata', async () => {
+  const host = boot();
+  host.openai.toolResponseMetadata = { [META_KEY]: report() };
+  await initialize(host);
+  host.fire('openai:set_globals', { globals: { toolResponseMetadata: { [META_KEY]: report() } } });
+  assert.ok(host.root.innerHTML.includes('Test task'), 'card should render the report');
+});
+
+test('an unrelated globals update does not restore the stale snapshot', async () => {
+  const host = boot();
+  // The persistent global still holds the ORIGINAL show_usage_card snapshot.
+  host.openai.toolResponseMetadata = {
+    [META_KEY]: report({ detailsLoaded: false, thread: { id: 'task-1', name: 'STALE' } })
+  };
+  await initialize(host);
+
+  // A refresh renders newer data.
+  host.fire('openai:set_globals', {
+    globals: { toolResponseMetadata: { [META_KEY]: report({ thread: { id: 'task-1', name: 'FRESH' } }) } }
+  });
+  assert.ok(host.root.innerHTML.includes('FRESH'), 'fresh data should render');
+
+  // Now an update about something else entirely arrives.
+  host.fire('openai:set_globals', { globals: { theme: 'dark' } });
+  assert.ok(!host.root.innerHTML.includes('STALE'), 'stale snapshot must not be restored');
+  assert.ok(host.root.innerHTML.includes('FRESH'), 'fresh data should survive');
+});
+
+test('a reference with no metadata triggers hydration', async () => {
+  const host = boot();
+  await initialize(host);
+  host.fire('openai:set_globals', {
+    globals: { toolOutput: { kind: 'usage_card_ref', threadId: 'task-1' } }
+  });
+  const call = host.sent.find(m => m.method === 'tools/call' && m.params?.name === 'refresh_usage_card');
+  assert.ok(call, 'card should request its own data when metadata is absent');
+  assert.strictEqual(call.params.arguments.thread_id, 'task-1');
+});
+
+test('a failed hydration retries instead of stranding the card', async () => {
+  const host = boot();
+  await initialize(host);
+  host.fire('openai:set_globals', {
+    globals: { toolOutput: { kind: 'usage_card_ref', threadId: 'task-1' } }
+  });
+  const first = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
+  assert.strictEqual(first.length, 1);
+
+  // Fail it the way the bridge would.
+  host.fire('message', { jsonrpc: '2.0', id: first[0].id, error: { message: 'nope' } });
+  await new Promise(resolve => setTimeout(resolve, 1400));
+
+  const after = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
+  assert.ok(after.length > 1, `expected a retry, saw ${after.length} call(s)`);
+});
+
+(async () => {
+  let failed = 0;
+  for (const [name, fn] of tests) {
+    try {
+      await fn();
+      console.log(`ok   ${name}`);
+    } catch (error) {
+      failed += 1;
+      console.log(`FAIL ${name}\n     ${error.message}`);
+    }
+  }
+  console.log(`\n${tests.length - failed}/${tests.length} passed`);
+  process.exit(failed ? 1 : 0);
+})();

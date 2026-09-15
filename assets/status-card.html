@@ -99,6 +99,7 @@
       let latestData = null;
       let refreshTimer = null;
       let hydrating = false;
+      let hydrateAttempts = 0;
       let pendingRef = null;
       let preferenceChannel = null;
       try {
@@ -117,13 +118,21 @@
       // The card payload is delivered as component-only _meta so it never enters
       // the model's context. Hosts surface that under different global names, so
       // try each and fall back to re-requesting the data.
-      const metaCandidates = (globals) => [
-        globals?.toolResponseMetadata, globals?.toolResponseMeta,
-        globals?.toolOutputMetadata, globals?.toolMeta, globals?._meta,
-        window.openai?.toolResponseMetadata, window.openai?.toolResponseMeta,
-        window.openai?.toolOutputMetadata, window.openai?.toolMeta, window.openai?._meta
-      ];
-      const reportFromMeta = (globals) => {
+      // A set_globals event carries only the globals that changed, so an update
+      // about something unrelated must never fall through to the persistent
+      // window.openai metadata — that still holds the original show_usage_card
+      // snapshot and would overwrite freshly refreshed data with a stale one.
+      // Scope strictly: an event payload is read alone, window.openai only when
+      // no payload was supplied.
+      const metaCandidates = globals => {
+        const source = globals || window.openai;
+        if (!source) return [];
+        return [
+          source.toolResponseMetadata, source.toolResponseMeta,
+          source.toolOutputMetadata, source.toolMeta, source._meta
+        ];
+      };
+      const reportFromMeta = globals => {
         for (const source of metaCandidates(globals)) {
           const report = source && (source[META_KEY] || source.codexUsageReport);
           if (report && report.kind === 'usage_card') return report;
@@ -141,9 +150,37 @@
         window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
         return response;
       };
+      // Fallback path for hosts that do not deliver component metadata. There is
+      // no already-rendered snapshot behind this, so a single failure would
+      // otherwise strand the card on its loading message. Retry a bounded number
+      // of times, then offer an explicit retry rather than spinning forever.
+      const HYDRATE_ATTEMPT_LIMIT = 4;
+      const hydrateFailed = threadId => {
+        root.innerHTML = `<div class="loading">Could not read local Codex usage. <button type="button" id="hydrate-retry">Retry</button></div>`;
+        const button = root.querySelector('#hydrate-retry');
+        if (button) {
+          button.addEventListener('click', () => {
+            hydrateAttempts = 0;
+            root.innerHTML = '<div class="loading">Reading local Codex usage…</div>';
+            reportHeight();
+            hydrate(threadId);
+          });
+        }
+        reportHeight();
+      };
       const hydrate = threadId => {
         if (hydrating || !initialized || !threadId) return;
+        if (hydrateAttempts >= HYDRATE_ATTEMPT_LIMIT) {
+          hydrateFailed(threadId);
+          return;
+        }
         hydrating = true;
+        hydrateAttempts += 1;
+        const retry = () => {
+          hydrating = false;
+          const backoff = Math.min(8000, 500 * Math.pow(2, hydrateAttempts));
+          window.setTimeout(() => hydrate(threadId), backoff);
+        };
         request('tools/call', {
           name: 'refresh_usage_card',
           arguments: {
@@ -152,10 +189,14 @@
             live_until_epoch_ms: Date.now() + 120000
           }
         }).then(result => {
-          render(metaFromResult(result) || structured(result));
-        }).catch(() => {
-          hydrating = false;
-        });
+          const report = metaFromResult(result) || structured(result);
+          if (!report) {
+            retry();
+            return;
+          }
+          hydrateAttempts = 0;
+          render(report);
+        }).catch(retry);
       };
       const reportHeight = () => {
         window.requestAnimationFrame(() => {
@@ -340,7 +381,11 @@
 
       window.addEventListener('openai:set_globals', event => {
         const globals = event.detail?.globals;
-        render(reportFromMeta(globals) || globals?.toolOutput, globals);
+        if (!globals) return;
+        const next = reportFromMeta(globals) || globals.toolOutput;
+        // Nothing card-related changed in this update; leave what is rendered.
+        if (next === undefined || next === null) return;
+        render(next, globals);
       });
       window.addEventListener('message', event => {
         if (event.source !== window.parent) return;
