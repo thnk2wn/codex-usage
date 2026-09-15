@@ -80,7 +80,7 @@ See [OpenAI's plugin submission documentation](https://developers.openai.com/plu
 - Automatic cards are rate-limited to one per task every five minutes by default. A qualifying user prompt creates a **new** compact snapshot near that turn; it refreshes in place for up to two minutes while work continues, then freezes in conversation history. Older cards are never rewritten.
 - The minimized header includes the snapshot time and remaining account capacity. It turns amber when 15% or less remains or current pace projects over the limit, and red when 10% or less remains. Clicking it expands clearly defined token metrics, a limit-window pace projection, a subdued compaction notice, the top five tasks, and a global automatic-card frequency control (every turn, 30 seconds, 1/5/15 minutes, or off). Open card instances synchronize that preference when the client permits it, and every historical card rechecks it when expanded.
 - `show_usage_card` can also render a card on demand. `refresh_usage_card` is used only by an already-rendered card, so live updates do not add more conversation items.
-- Mobile Remote falls back to a single-line status result when it does not render the MCP App iframe; say `usage details` for a text breakdown.
+- Mobile Remote falls back to a single-line status result when it does not render the MCP App iframe; say `usage details` for a text breakdown. That path uses `usage_details`, which returns the same report as model-readable data, because a card's own render payload is delivered to the component only.
 - `open_usage_dashboard` starts the optional private localhost dashboard for a larger cross-task view.
 - `current_conversation_usage` returns a concise snapshot for the active conversation when a panel is not needed.
 - `usage_dashboard` returns structured cross-task data for the current limit window, today, or rolling 7/30-day ranges.
@@ -95,9 +95,13 @@ The five-minute automatic-card cadence limits how often a new conversation item 
 
 ## What the plugin itself costs
 
-Cards are MCP tool results, so they occupy conversation context and are not free. Each automatic card costs roughly 500 tokens: about 96 for the hook instruction and about 400 for the compact card payload.
+Cards are MCP tool results, so they occupy conversation context and are not free. Each automatic card costs roughly 170 tokens: about 96 for the hook instruction and about 76 for the summary line and a small reference. That is down from roughly 410 before the render data was moved out of context.
 
-Only that compact payload enters the conversation. The cross-task breakdown is fetched afterwards by the rendered card through `refresh_usage_card`, which updates the card in place without adding a conversation item, so the top-task list never costs context. Measured against real sessions, deferring it roughly halved the per-card cost.
+The card's own render data does not enter the conversation at all. It travels in the tool result's `_meta`, which the host delivers only to the component, so the card draws every metric it shows while the transcript carries just the summary. Measured on a real card, the model-visible result drops from 1,259 bytes to 307, a 76% cut, which is a 58% cut per card once the hook instruction is counted.
+
+The hook instruction is now the larger half of what remains, so it is the next thing to shorten if this needs to go lower.
+
+The cross-task breakdown is fetched separately by the rendered card through `refresh_usage_card`, which updates the card in place without adding a conversation item, so the top-task list never costs context either.
 
 The larger cost is not the card itself but how long it lives. A card stays in conversation history and is re-read on every later turn, so one card early in a 500-turn session is re-read hundreds of times. In one measured week, cards accounted for about 0.65% of raw token usage, and two long sessions produced over 98% of it. Most of those re-reads are cache hits, so the cost against your actual quota is a fraction of the raw number.
 

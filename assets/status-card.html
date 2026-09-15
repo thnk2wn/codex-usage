@@ -98,6 +98,9 @@
       let initialized = false;
       let latestData = null;
       let refreshTimer = null;
+      let hydrating = false;
+      let hydrateAttempts = 0;
+      let deferred = null;
       let preferenceChannel = null;
       try {
         if (typeof BroadcastChannel === 'function') preferenceChannel = new BroadcastChannel('codex-usage-preferences-v1');
@@ -111,6 +114,52 @@
       const clock = iso => iso ? new Intl.DateTimeFormat(undefined, { hour:'numeric', minute:'2-digit' }).format(new Date(iso)) : '—';
       const metric = (label, value, help) => `<div class="metric" title="${esc(help)}"><span>${esc(label)}<i class="info" aria-label="${esc(help)}">i</i></span><strong>${esc(value)}</strong></div>`;
       const structured = result => result?.structuredContent || result?.result?.structuredContent || result?.toolResult?.structuredContent;
+      const META_KEY = 'codexUsage/report';
+      // The card's render data arrives as component-only _meta, a first-paint
+      // optimisation so the model's context never carries it. If a host does not
+      // deliver it, the tool result still holds a reference and the card fetches
+      // its own data through refresh_usage_card (see hydrate).
+      //
+      // Hosts expose the metadata under different global names and may hand over
+      // the whole tool result (mcp_tool_result, call_tool_result, ...) with the
+      // payload inside that result's own _meta, so nested envelopes are checked
+      // before flat aliases. None of these helpers ever fall back to the
+      // persistent window.openai globals on their own: those still hold the
+      // ORIGINAL snapshot, and an event about something unrelated must not be
+      // able to restore it over refreshed data. Only the bootstrap reads pass
+      // window.openai in explicitly.
+      const ENVELOPE_KEYS = ['mcp_tool_result', 'call_tool_result', 'toolResult', 'tool_result', 'result'];
+      const metaCandidates = source => {
+        if (!source || typeof source !== 'object') return [];
+        const bases = [
+          source.toolResponseMetadata, source.toolResponseMeta,
+          source.toolOutputMetadata, source.toolMeta, source._meta, source
+        ];
+        const candidates = [];
+        for (const base of bases) {
+          if (!base || typeof base !== 'object') continue;
+          for (const key of ENVELOPE_KEYS) {
+            const nested = base[key];
+            if (nested && typeof nested === 'object') {
+              if (nested._meta && typeof nested._meta === 'object') candidates.push(nested._meta);
+              candidates.push(nested);
+            }
+          }
+          candidates.push(base);
+        }
+        return candidates;
+      };
+      const reportIn = source => {
+        for (const candidate of metaCandidates(source)) {
+          const report = candidate[META_KEY];
+          if (report && report.kind === 'usage_card') return report;
+        }
+        return null;
+      };
+      // One rule for what a source contributes: its _meta report, else its
+      // toolOutput (a full report or a usage_card_ref). Used for startup and
+      // live updates alike so the two cannot drift.
+      const cardFrom = source => reportIn(source) || source?.toolOutput;
       const notify = (method, params = {}) => {
         window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
       };
@@ -119,6 +168,64 @@
         const response = new Promise((resolve, reject) => pendingRequests.set(id, { resolve, reject }));
         window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
         return response;
+      };
+      // Fallback for hosts that do not deliver component metadata. It only ever
+      // runs while nothing is rendered: once a card is on screen it is never
+      // replaced by this path, so a re-delivered reference cannot destroy a good
+      // card or un-freeze a historical snapshot. Transport failures retry with
+      // bounded backoff, then offer an explicit Retry. A render error is not a
+      // transport error and is never retried automatically.
+      const HYDRATE_ATTEMPT_LIMIT = 4;
+      const hydrateFailed = ref => {
+        if (latestData) return;
+        root.innerHTML = `<div class="loading">Could not read local Codex usage. <button type="button" id="hydrate-retry">Retry</button></div>`;
+        const button = root.querySelector('#hydrate-retry');
+        if (button) {
+          button.addEventListener('click', () => {
+            hydrateAttempts = 0;
+            root.innerHTML = '<div class="loading">Reading local Codex usage…</div>';
+            reportHeight();
+            hydrate(ref);
+          });
+        }
+        reportHeight();
+      };
+      const hydrate = ref => {
+        const threadId = ref && ref.threadId;
+        if (hydrating || !initialized || !threadId || latestData) return;
+        if (hydrateAttempts >= HYDRATE_ATTEMPT_LIMIT) {
+          hydrateFailed(ref);
+          return;
+        }
+        hydrating = true;
+        hydrateAttempts += 1;
+        const retry = () => {
+          hydrating = false;
+          const backoff = Math.min(8000, 500 * Math.pow(2, hydrateAttempts));
+          window.setTimeout(() => hydrate(ref), backoff);
+        };
+        request('tools/call', {
+          name: 'refresh_usage_card',
+          arguments: {
+            thread_id: threadId,
+            // Preserve the caller's live setting rather than assuming a new window.
+            live: Boolean(ref.live),
+            live_until_epoch_ms: Number(ref.liveUntilEpochMs || 0)
+          }
+        }).then(result => {
+          const report = reportIn(result) || structured(result);
+          if (!report) {
+            retry();
+            return;
+          }
+          hydrating = false;
+          hydrateAttempts = 0;
+          try {
+            render(report);
+          } catch (_error) {
+            hydrateFailed(ref);
+          }
+        }, retry);
       };
       const reportHeight = () => {
         window.requestAnimationFrame(() => {
@@ -177,7 +284,24 @@
         }, delay);
       };
       function render(data) {
-        if (!data || data.kind !== 'usage_card') return;
+        if (!data) return;
+        // A bare reference means the host did not deliver _meta: fetch the data.
+        // Before ui/initialize resolves the bridge cannot be used, so keep the
+        // reference and replay it once initialised.
+        if (data.kind === 'usage_card_ref') {
+          if (!initialized) deferred = data;
+          else hydrate(data);
+          return;
+        }
+        if (data.kind !== 'usage_card') return;
+        // Never let an older snapshot of the same thread overwrite a newer one.
+        // This holds regardless of which channel delivered it, so it does not
+        // depend on hosts sending delta-only updates.
+        if (latestData && latestData.thread?.id === data.thread?.id
+            && data.generatedAt && latestData.generatedAt
+            && new Date(data.generatedAt) < new Date(latestData.generatedAt)) {
+          return;
+        }
         latestData = data;
         const existing = root.querySelector(':scope > details');
         const expanded = existing ? existing.open : Boolean(window.openai?.widgetState?.expanded);
@@ -290,7 +414,12 @@
         scheduleRefresh(data);
       }
 
-      window.addEventListener('openai:set_globals', event => render(event.detail?.globals?.toolOutput));
+      window.addEventListener('openai:set_globals', event => {
+        const globals = event.detail?.globals;
+        if (!globals) return;
+        // Read only this update; an unrelated change contributes nothing.
+        render(cardFrom(globals));
+      });
       window.addEventListener('message', event => {
         if (event.source !== window.parent) return;
         const message = event.data || {};
@@ -304,18 +433,23 @@
         }
         if (message.method === 'ui/notifications/tool-result') {
           const params = message.params || {};
-          render(structured(params));
+          render(reportIn(params) || structured(params));
         }
       }, { passive: true });
-      render(window.openai?.toolOutput);
+      render(cardFrom(window.openai));
       request('ui/initialize', {
-        appInfo: { name: 'codex-usage', version: '0.2.0' },
+        appInfo: { name: 'codex-usage', version: '0.3.0' },
         appCapabilities: { availableDisplayModes: ['inline'] },
         protocolVersion: '2025-11-21'
       }).then(() => {
         initialized = true;
         notify('ui/notifications/initialized');
-        render(window.openai?.toolOutput);
+        // The pre-init render already built the card if data was available; the
+        // only thing it could not do was arm refreshes. Otherwise replay a
+        // reference seen before init, or read the persistent globals now.
+        if (latestData) scheduleRefresh(latestData);
+        else render(deferred || cardFrom(window.openai));
+        deferred = null;
         reportHeight();
       }).catch(() => {
         reportHeight();

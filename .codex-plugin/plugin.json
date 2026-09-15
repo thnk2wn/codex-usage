@@ -1,6 +1,6 @@
 {
   "name": "codex-usage",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Live, rate-limited Codex usage snapshots and cross-task insights.",
   "author": {
     "name": "Geoff Hudik",

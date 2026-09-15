@@ -26,13 +26,15 @@ except ImportError:  # pragma: no cover - Python 3.8 fallback
 
 
 SERVER_NAME = "codex-usage"
-SERVER_VERSION = "0.2.0"
+SERVER_VERSION = "0.3.0"
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 DASHBOARD_PATH = PLUGIN_ROOT / "assets" / "dashboard.html"
 CARD_PATH = PLUGIN_ROOT / "assets" / "status-card.html"
 # Active Codex tasks cache the MCP resource catalog. Keep this URI stable across
 # plugin reinstalls and use the manifest version cachebuster for UI revisions.
 CARD_RESOURCE_URI = "ui://codex-usage/status-card-v7.html"
+# Component-only key. The card payload travels here so it never enters context.
+CARD_REPORT_META_KEY = "codexUsage/report"
 LEGACY_CARD_RESOURCE_URIS = {
     "ui://codex-usage/status-card-v1.html",
     "ui://codex-usage/status-card-v2.html",
@@ -875,6 +877,17 @@ TOOLS = [
         },
     ),
     _tool_descriptor(
+        "usage_details",
+        "Return the full usage breakdown as text-readable data, for clients that cannot render the card.",
+        {
+            "thread_id": {
+                "type": "string",
+                "description": "The current Codex task/thread ID from the task context.",
+            }
+        },
+        required=["thread_id"],
+    ),
+    _tool_descriptor(
         "current_conversation_usage",
         "Show raw local token usage for the current Codex conversation and its subagents.",
         {
@@ -965,6 +978,33 @@ def _tool_result(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _card_tool_result(report: dict[str, Any]) -> dict[str, Any]:
+    """Return a card without putting its render data in the model's context.
+
+    `structuredContent` and `content` are surfaced to the model and persist in
+    the transcript, where an automatic card is then re-read by every later turn.
+    `_meta` is delivered only to the component, so the card renders from the
+    same data while the conversation carries just the summary line.
+
+    A tiny reference stays in `structuredContent` so the card can always
+    re-request its own data if a host does not deliver `_meta`.
+    """
+    return {
+        "content": [{"type": "text", "text": _text_summary(report)}],
+        "structuredContent": {
+            "kind": "usage_card_ref",
+            "threadId": (report.get("thread") or {}).get("id"),
+            # Carry the caller's live setting so the fallback cannot turn a
+            # live:false call into a polling one.
+            "live": bool((report.get("liveRefresh") or {}).get("enabled")),
+            "liveUntilEpochMs": int(
+                (report.get("liveRefresh") or {}).get("untilEpochMs") or 0
+            ),
+        },
+        "_meta": {CARD_REPORT_META_KEY: report},
+    }
+
+
 def _handle(method: str, params: dict[str, Any]) -> Any:
     if method == "initialize":
         return {
@@ -1014,7 +1054,7 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
         name = params.get("name")
         arguments = params.get("arguments") or {}
         if name == "show_usage_card":
-            return _tool_result(usage_card(arguments, include_details=False))
+            return _card_tool_result(usage_card(arguments, include_details=False))
         if name == "refresh_usage_card":
             return _tool_result(
                 usage_card(
@@ -1034,6 +1074,8 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
             return _tool_result(update_auto_card_interval(arguments))
         if name == "open_usage_dashboard":
             return _tool_result(open_usage_dashboard(arguments))
+        if name == "usage_details":
+            return _tool_result(usage_card(arguments, include_details=True))
         if name == "current_conversation_usage":
             return _tool_result(current_conversation_usage(arguments))
         if name == "usage_dashboard":
