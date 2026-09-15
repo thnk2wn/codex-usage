@@ -123,12 +123,22 @@ class TextFallbackContractTest(unittest.TestCase):
 
 
 class CardResourceTest(unittest.TestCase):
-    def test_cachebuster_advanced_and_old_uri_retired(self) -> None:
-        self.assertIn("v8", server.CARD_RESOURCE_URI)
-        self.assertIn(
-            "ui://codex-usage/status-card-v7.html", server.LEGACY_CARD_RESOURCE_URIS
+    def test_card_resource_uri_stays_stable(self) -> None:
+        # ac487d8 deliberately stopped bumping this; the manifest version is the
+        # cachebuster for UI revisions, so a card change must not move the URI.
+        self.assertEqual(
+            server.CARD_RESOURCE_URI, "ui://codex-usage/status-card-v7.html"
         )
         self.assertNotIn(server.CARD_RESOURCE_URI, server.LEGACY_CARD_RESOURCE_URIS)
+
+    def test_manifest_version_is_the_cachebuster(self) -> None:
+        manifest = json.loads(
+            (Path(server.PLUGIN_ROOT) / ".codex-plugin" / "plugin.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(manifest["version"], server.SERVER_VERSION)
+        self.assertNotEqual(manifest["version"], "0.2.0")
 
     def test_card_html_reads_the_meta_key(self) -> None:
         self.assertIn(server.CARD_REPORT_META_KEY, server.CARD_HTML)
