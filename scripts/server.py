@@ -878,6 +878,17 @@ TOOLS = [
         },
     ),
     _tool_descriptor(
+        "usage_details",
+        "Return the full usage breakdown as text-readable data, for clients that cannot render the card.",
+        {
+            "thread_id": {
+                "type": "string",
+                "description": "The current Codex task/thread ID from the task context.",
+            }
+        },
+        required=["thread_id"],
+    ),
+    _tool_descriptor(
         "current_conversation_usage",
         "Show raw local token usage for the current Codex conversation and its subagents.",
         {
@@ -1058,6 +1069,8 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
             return _tool_result(update_auto_card_interval(arguments))
         if name == "open_usage_dashboard":
             return _tool_result(open_usage_dashboard(arguments))
+        if name == "usage_details":
+            return _tool_result(usage_card(arguments, include_details=True))
         if name == "current_conversation_usage":
             return _tool_result(current_conversation_usage(arguments))
         if name == "usage_dashboard":

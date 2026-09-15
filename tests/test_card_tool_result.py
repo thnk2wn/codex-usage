@@ -91,6 +91,37 @@ class CardToolResultTest(unittest.TestCase):
         self.assertEqual(result["structuredContent"]["kind"], "usage_card")
 
 
+class TextFallbackContractTest(unittest.TestCase):
+    """The card tells users to say "usage details"; that path must stay readable.
+
+    A card's render data is component-only, so a client that cannot draw the
+    component has nothing to summarise from show_usage_card. usage_details is
+    the model-visible path that keeps that promise.
+    """
+
+    def _tool(self, name: str) -> dict:
+        return next(tool for tool in server.TOOLS if tool["name"] == name)
+
+    def test_usage_details_tool_is_exposed(self) -> None:
+        tool = self._tool("usage_details")
+        self.assertIn("thread_id", tool["inputSchema"]["properties"])
+        self.assertEqual(tool["inputSchema"].get("required"), ["thread_id"])
+
+    def test_usage_details_is_not_a_component(self) -> None:
+        # No ui resource: this path exists to be read, not rendered.
+        self.assertNotIn("ui", (self._tool("usage_details").get("_meta") or {}))
+
+    def test_card_summary_still_points_at_the_details_phrase(self) -> None:
+        text = server._text_summary(_card_report())
+        self.assertIn("usage details", text)
+
+    def test_skill_routes_the_details_phrase_away_from_the_card(self) -> None:
+        skill = (
+            Path(server.PLUGIN_ROOT) / "skills" / "codex-usage" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("usage_details", skill)
+
+
 class CardResourceTest(unittest.TestCase):
     def test_cachebuster_advanced_and_old_uri_retired(self) -> None:
         self.assertIn("v8", server.CARD_RESOURCE_URI)
