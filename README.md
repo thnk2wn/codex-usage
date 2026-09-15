@@ -2,7 +2,13 @@
 
 A private, local-first Codex plugin that attributes raw processed tokens to conversations, subagents, automations, and internal activity. It supports personal installs, private workspace distribution, and self-contained GitHub release bundles without public marketplace publication.
 
-![Codex Usage expanded usage card](assets/codex-usage-card.png)
+Collapsed warning state:
+
+![Codex Usage collapsed critical warning](assets/codex-usage-card-collapsed.png)
+
+Expanded details:
+
+![Codex Usage expanded critical warning](assets/codex-usage-card.png)
 
 ## Install
 
@@ -71,13 +77,21 @@ See [OpenAI's plugin submission documentation](https://developers.openai.com/plu
 
 ## UI surfaces
 
-- Automatic cards are rate-limited to one per task per minute by default. A qualifying user prompt creates a **new** compact snapshot near that turn; it refreshes in place for up to two minutes while work continues, then freezes in conversation history. Older cards are never rewritten.
+- Automatic cards are rate-limited to one per task every five minutes by default. A qualifying user prompt creates a **new** compact snapshot near that turn; it refreshes in place for up to two minutes while work continues, then freezes in conversation history. Older cards are never rewritten.
 - The minimized header includes the snapshot time and remaining account capacity. It turns amber when 15% or less remains or current pace projects over the limit, and red when 10% or less remains. Clicking it expands clearly defined token metrics, a limit-window pace projection, a subdued compaction notice, the top five tasks, and a global automatic-card frequency control (every turn, 30 seconds, 1/5/15 minutes, or off). Open card instances synchronize that preference when the client permits it, and every historical card rechecks it when expanded.
 - `show_usage_card` can also render a card on demand. `refresh_usage_card` is used only by an already-rendered card, so live updates do not add more conversation items.
 - Mobile Remote falls back to a single-line status result when it does not render the MCP App iframe; say `usage details` for a text breakdown.
 - `open_usage_dashboard` starts the optional private localhost dashboard for a larger cross-task view.
 - `current_conversation_usage` returns a concise snapshot for the active conversation when a panel is not needed.
 - `usage_dashboard` returns structured cross-task data for the current limit window, today, or rolling 7/30-day ranges.
+
+## How automatic cards work
+
+The trusted prompt hook only decides whether a card is due and asks Codex to invoke it; it does not scan usage data itself. The first tool result reads the current task and latest account-limit snapshot, so the compact header can appear quickly with context, task tokens, remaining capacity, warning color, and snapshot time.
+
+Once that header is rendered, the embedded card requests the heavier limit-window scan asynchronously. Expanding immediately may briefly show **Loading cross-task breakdown…** before the top-five task list arrives. That scan is cached for five minutes, while the current-task values can continue refreshing every few seconds for up to two minutes. This background hydration does not hold up the agent after the initial compact result has returned.
+
+The five-minute automatic-card cadence limits how often a new conversation item is added; it is separate from the short-lived refreshes inside an existing card. Change the cadence from any expanded card. The preference is shared globally, while the last-rendered timestamp is tracked per task.
 
 ## Data and privacy
 

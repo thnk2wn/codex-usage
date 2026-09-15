@@ -47,7 +47,7 @@ _DASHBOARD_LOCK = threading.Lock()
 _REPORT_CACHE: dict[tuple[str, bool], tuple[float, dict[str, Any]]] = {}
 _REPORT_CACHE_LOCK = threading.Lock()
 _REPORT_CACHE_TTL_SECONDS = 10
-_CARD_REPORT_CACHE_TTL_SECONDS = 30
+_CARD_REPORT_CACHE_TTL_SECONDS = 5 * 60
 _LIMIT_CACHE: tuple[float, dict[str, Any] | None] | None = None
 _LIMIT_CACHE_LOCK = threading.Lock()
 _LIMIT_CACHE_TTL_SECONDS = 10
@@ -490,10 +490,16 @@ def current_conversation_usage(arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def usage_card(arguments: dict[str, Any]) -> dict[str, Any]:
+def usage_card(
+    arguments: dict[str, Any], *, include_details: bool = True
+) -> dict[str, Any]:
     current = current_conversation_usage(arguments)
-    dashboard = _cached_usage_dashboard(
-        "current_window", False, _CARD_REPORT_CACHE_TTL_SECONDS
+    dashboard = (
+        _cached_usage_dashboard(
+            "current_window", False, _CARD_REPORT_CACHE_TTL_SECONDS
+        )
+        if include_details
+        else None
     )
     now = datetime.now(timezone.utc)
     live_requested = bool(arguments.get("live", True))
@@ -544,7 +550,8 @@ def usage_card(arguments: dict[str, Any]) -> dict[str, Any]:
         "combinedTokens": current["combinedTokens"],
         "limit": current["limit"],
         "pace": _usage_pace(current["limit"]),
-        "windowUsage": dashboard["totals"],
+        "detailsLoaded": include_details,
+        "windowUsage": dashboard["totals"] if dashboard else None,
         "topTasks": [
             {
                 "id": task["id"],
@@ -561,7 +568,7 @@ def usage_card(arguments: dict[str, Any]) -> dict[str, Any]:
                 "totalTokens": task["totalTokens"],
                 "sharePercent": task["sharePercent"],
             }
-            for task in dashboard["tasks"][:5]
+            for task in (dashboard["tasks"][:5] if dashboard else [])
         ],
         "alerts": alerts,
         "preferences": get_preferences(),
@@ -771,6 +778,11 @@ TOOLS = [
                 "type": "number",
                 "description": "The original card's fixed live-refresh deadline.",
             },
+            "live": {
+                "type": "boolean",
+                "default": True,
+                "description": "Continue live refreshes after the cross-task details load.",
+            },
         },
         required=["thread_id", "live_until_epoch_ms"],
     ),
@@ -945,17 +957,18 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
         name = params.get("name")
         arguments = params.get("arguments") or {}
         if name == "show_usage_card":
-            return _tool_result(usage_card(arguments))
+            return _tool_result(usage_card(arguments, include_details=False))
         if name == "refresh_usage_card":
             return _tool_result(
                 usage_card(
                     {
                         "thread_id": arguments.get("thread_id"),
-                        "live": True,
+                        "live": bool(arguments.get("live", True)),
                         "live_until_epoch_ms": arguments.get(
                             "live_until_epoch_ms"
                         ),
-                    }
+                    },
+                    include_details=True,
                 )
             )
         if name == "get_usage_preferences":

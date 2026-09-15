@@ -27,10 +27,10 @@ class PreferencesTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_default_and_rate_limit(self) -> None:
-        self.assertEqual(get_preferences()["autoCardIntervalSeconds"], 60)
+        self.assertEqual(get_preferences()["autoCardIntervalSeconds"], 300)
         self.assertTrue(claim_auto_card("task-1", now=1000))
-        self.assertFalse(claim_auto_card("task-1", now=1059))
-        self.assertTrue(claim_auto_card("task-1", now=1060))
+        self.assertFalse(claim_auto_card("task-1", now=1299))
+        self.assertTrue(claim_auto_card("task-1", now=1300))
 
     def test_every_turn_and_off(self) -> None:
         set_auto_card_interval(0)
