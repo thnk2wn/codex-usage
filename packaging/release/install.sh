@@ -13,4 +13,11 @@ codex plugin marketplace add "$bundle_root"
 codex plugin add codex-usage@codex-usage-release
 
 echo
-echo "Codex Usage is installed. Start a new Codex task to use it."
+echo "Codex Usage is installed."
+echo ""
+echo "To enable automatic cards, run 'codex' and review the bundled hook:"
+echo "  1. Choose 'Review hooks' at startup, or enter /hooks."
+echo "  2. Open UserPromptSubmit and verify it is from codex-usage."
+echo "  3. Press t to trust it, exit the CLI, and start a new desktop task."
+echo ""
+echo "Codex Desktop currently does not show this pending hook review itself."

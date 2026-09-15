@@ -15,6 +15,15 @@ codex plugin add codex-usage@thnk2wn
 
 Start a new Codex task after installation so the skill and tools are loaded. The repository is currently private, so the installing user needs GitHub read access and working SSH credentials.
 
+Automatic cards require a one-time trust review for the bundled `UserPromptSubmit` hook. Codex Desktop does not currently surface that pending review, so complete it in Terminal:
+
+1. Run `codex`.
+2. Choose **Review hooks** in the startup warning, or enter `/hooks` after Codex opens.
+3. Open **UserPromptSubmit** and verify the source is **Plugin - codex-usage@...** and the command is `python3 "$PLUGIN_ROOT/hooks/auto_usage_card.py"`.
+4. Press `t` to trust that hook, then exit the CLI and start a new desktop task.
+
+Trust is saved globally for that exact hook definition. If a later plugin update changes the hook, Codex will require another review.
+
 To pick up a newer version later:
 
 ```bash
@@ -76,7 +85,7 @@ The MCP server reads `~/.codex/state_5.sqlite` and the rollout files already ref
 
 Cards are still MCP tool-result UI: the plugin's `UserPromptSubmit` hook asks Codex to invoke the card at the start of a qualifying user turn. It cannot push unsolicited UI into an idle conversation. The hook stores only its per-task last-card time, and preferences live in `~/.codex/codex-usage/`.
 
-Plugin hooks must be reviewed and trusted before Codex will run them. After installation or an update, start a new task and follow the app's hook-review prompt (or use `/hooks` in the CLI). Until the hook is trusted, cards remain available on demand but will not appear automatically.
+Plugin hooks must be reviewed and trusted before Codex will run them. Use the CLI `/hooks` flow described under **Install**; the current desktop app silently skips an unreviewed hook rather than showing the review UI. Until the hook is trusted, cards remain available on demand but will not appear automatically.
 
 The numbers are raw local token counters, not a server-authoritative quota ledger. The aggregate usage percentage is the latest coarse snapshot recorded in local session metadata.
 
