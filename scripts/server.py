@@ -734,6 +734,18 @@ def _text_summary(report: dict[str, Any]) -> str:
         account = report.get("limit") or {}
         account_percent = account.get("usedPercent")
         account_text = f"{account_percent:.0f}%" if account_percent is not None else "—"
+        window_days = int(account.get("windowMinutes") or 0) // (24 * 60)
+        account_label = f"{window_days}-day" if window_days else "Account"
+        pace = report.get("pace") or {}
+        if pace.get("status") == "likely_exhausts" and pace.get("reachesLimitAt"):
+            reaches = datetime.fromtimestamp(
+                pace["reachesLimitAt"], _local_timezone()
+            )
+            pace_text = f" · Pace: limit ~{reaches.strftime('%b')} {reaches.day}"
+        elif pace.get("status") == "within_limit":
+            pace_text = " · Pace: within limit"
+        else:
+            pace_text = ""
         token_count = report["combinedTokens"]
         session_text = (
             f"{token_count / 1_000_000:.1f}M"
@@ -743,8 +755,8 @@ def _text_summary(report: dict[str, Any]) -> str:
             else str(token_count)
         )
         return (
-            f"⚡ Usage · Context {context_text} · Session {session_text} raw · "
-            f"Account {account_text} · Say “usage details” for breakdown."
+            f"⚡ Usage · Context {context_text} · Task {session_text} raw · "
+            f"{account_label} {account_text}{pace_text} · Say “usage details” for breakdown."
         )
     tasks = report.get("tasks") or []
     leader = tasks[0] if tasks else None
