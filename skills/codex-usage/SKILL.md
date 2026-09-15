@@ -9,9 +9,7 @@ Use the plugin's read-only tools instead of querying Codex's private SQLite data
 
 ## Native usage card
 
-Call `show_usage_card` by default when the user asks to show, display, view, or check Codex usage. Omit `thread_id` so the card scopes itself to the current task. The compact row is intentionally collapsed; the user can expand it for current-context pressure, latest response output, cached input, subagents, account reset, and top tasks.
-
-If the tool reports that the current task ID is unavailable, immediately retry with the current Codex task ID when it is known from the task context.
+Call `show_usage_card` by default when the user asks to show, display, view, or check Codex usage. Always pass the current Codex task ID from the task context as `thread_id`; never make an initial call without it. The card first appears as a compact usage-data row. The user can click that row to expand current-context pressure, latest response output, cached input, subagents, account reset, and top tasks.
 
 Mobile Remote currently preserves the tool result but may not render the MCP App iframe. The text fallback is intentionally one line and tells the user to say `usage details`. When the user asks for those details after a text-only result, call `show_usage_card` again and summarize its structured result in text: context input/window, latest output, cached input, subagents, account usage/reset, alerts, and top tasks. Do not claim that the one-line mobile result is clickable or expandable.
 
@@ -29,7 +27,7 @@ The localhost panel refreshes automatically and combines this conversation with 
 
 ## Current conversation
 
-Call `current_conversation_usage` when the user asks for a concise answer about how much this conversation, session, task, or thread has used without asking to open the panel. Omit `thread_id` so the server uses the current Codex thread. Pass an explicit thread ID only when the user names a different task and its ID is already known.
+Call `current_conversation_usage` when the user asks for a concise answer about how much this conversation, session, task, or thread has used without asking to open the panel. Always pass the current Codex task ID from the task context as `thread_id`. Pass a different explicit thread ID only when the user names a different task and its ID is already known.
 
 Briefly summarize the result, distinguishing:
 

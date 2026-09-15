@@ -28,8 +28,11 @@ SERVER_VERSION = "0.1.0"
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 DASHBOARD_PATH = PLUGIN_ROOT / "assets" / "dashboard.html"
 CARD_PATH = PLUGIN_ROOT / "assets" / "status-card.html"
-CARD_RESOURCE_URI = "ui://codex-usage/status-card-v2.html"
-LEGACY_CARD_RESOURCE_URIS = {"ui://codex-usage/status-card-v1.html"}
+CARD_RESOURCE_URI = "ui://codex-usage/status-card-v3.html"
+LEGACY_CARD_RESOURCE_URIS = {
+    "ui://codex-usage/status-card-v1.html",
+    "ui://codex-usage/status-card-v2.html",
+}
 CARD_HTML = CARD_PATH.read_text(encoding="utf-8")
 _DASHBOARD_SERVER: ThreadingHTTPServer | None = None
 _DASHBOARD_LOCK = threading.Lock()
@@ -596,9 +599,11 @@ def _tool_descriptor(
     properties: dict[str, Any],
     *,
     meta: dict[str, Any] | None = None,
+    required: list[str] | None = None,
 ) -> dict[str, Any]:
     descriptor = {
         "name": name,
+        "title": name.replace("_", " ").title(),
         "description": description,
         "inputSchema": {
             "type": "object",
@@ -611,6 +616,8 @@ def _tool_descriptor(
             "openWorldHint": False,
         },
     }
+    if required:
+        descriptor["inputSchema"]["required"] = required
     if meta:
         descriptor["_meta"] = meta
     return descriptor
@@ -620,13 +627,19 @@ TOOLS = [
     _tool_descriptor(
         "show_usage_card",
         "Render a compact native usage card for this Codex conversation with expandable cross-task details.",
-        {"thread_id": {"type": "string", "description": "Optional explicit Codex thread ID."}},
+        {
+            "thread_id": {
+                "type": "string",
+                "description": "The current Codex task/thread ID from the task context.",
+            }
+        },
         meta={
             "ui": {"resourceUri": CARD_RESOURCE_URI},
             "openai/outputTemplate": CARD_RESOURCE_URI,
             "openai/toolInvocation/invoking": "Reading local usage…",
             "openai/toolInvocation/invoked": "Usage ready",
         },
+        required=["thread_id"],
     ),
     _tool_descriptor(
         "open_usage_dashboard",
@@ -644,7 +657,13 @@ TOOLS = [
     _tool_descriptor(
         "current_conversation_usage",
         "Show raw local token usage for the current Codex conversation and its subagents.",
-        {"thread_id": {"type": "string", "description": "Optional explicit Codex thread ID."}},
+        {
+            "thread_id": {
+                "type": "string",
+                "description": "The current Codex task/thread ID from the task context.",
+            }
+        },
+        required=["thread_id"],
     ),
     _tool_descriptor(
         "usage_dashboard",
@@ -744,7 +763,10 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
                     "_meta": {
                         "ui": {"prefersBorder": False},
                         "openai/widgetDescription": "Compact local Codex usage status with expandable task details.",
+                        "openai/widgetHeightHint": 48,
+                        "openai/widgetMinFrameHeight": 48,
                         "openai/widgetPrefersBorder": False,
+                        "openai/widgetShowCodexWidgetInline": True,
                     },
                 }
             ]
