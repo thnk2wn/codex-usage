@@ -45,6 +45,27 @@ class CardToolResultTest(unittest.TestCase):
         self.assertEqual(result["structuredContent"]["kind"], "usage_card_ref")
         self.assertEqual(result["structuredContent"]["threadId"], "task-1")
 
+    def test_reference_carries_the_live_setting(self) -> None:
+        report = _card_report()
+        report["liveRefresh"] = {"enabled": False, "untilEpochMs": 0}
+        reference = server._card_tool_result(report)["structuredContent"]
+        self.assertFalse(reference["live"])
+        self.assertEqual(reference["liveUntilEpochMs"], 0)
+
+    def test_reference_reports_an_enabled_live_window(self) -> None:
+        report = _card_report()
+        report["liveRefresh"] = {"enabled": True, "untilEpochMs": 1_700_000_000_000}
+        reference = server._card_tool_result(report)["structuredContent"]
+        self.assertTrue(reference["live"])
+        self.assertEqual(reference["liveUntilEpochMs"], 1_700_000_000_000)
+
+    def test_reference_survives_a_missing_live_block(self) -> None:
+        report = _card_report()
+        report.pop("liveRefresh", None)
+        reference = server._card_tool_result(report)["structuredContent"]
+        self.assertFalse(reference["live"])
+        self.assertEqual(reference["liveUntilEpochMs"], 0)
+
     def test_reference_survives_a_missing_thread(self) -> None:
         report = _card_report()
         report.pop("thread")

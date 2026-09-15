@@ -994,6 +994,12 @@ def _card_tool_result(report: dict[str, Any]) -> dict[str, Any]:
         "structuredContent": {
             "kind": "usage_card_ref",
             "threadId": (report.get("thread") or {}).get("id"),
+            # Carry the caller's live setting so the fallback cannot turn a
+            # live:false call into a polling one.
+            "live": bool((report.get("liveRefresh") or {}).get("enabled")),
+            "liveUntilEpochMs": int(
+                (report.get("liveRefresh") or {}).get("untilEpochMs") or 0
+            ),
         },
         "_meta": {CARD_REPORT_META_KEY: report},
     }

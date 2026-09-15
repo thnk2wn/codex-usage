@@ -70,10 +70,13 @@ class UsageCardTest(unittest.TestCase):
             )
             # The card renders from component-only _meta; the transcript sees
             # only a summary line and a reference back to this thread.
-            self.assertEqual(
-                initial_result["structuredContent"],
-                {"kind": "usage_card_ref", "threadId": "task-1"},
-            )
+            reference = initial_result["structuredContent"]
+            self.assertEqual(reference["kind"], "usage_card_ref")
+            self.assertEqual(reference["threadId"], "task-1")
+            # The reference carries the caller's live setting so the fallback
+            # cannot silently start polling; the deadline is a moving value.
+            self.assertTrue(reference["live"])
+            self.assertIn("liveUntilEpochMs", reference)
             initial = initial_result["_meta"][server.CARD_REPORT_META_KEY]
 
             self.assertFalse(initial["detailsLoaded"])

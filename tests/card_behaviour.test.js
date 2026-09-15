@@ -189,6 +189,41 @@ test('a reference with no metadata triggers hydration', async () => {
   assert.strictEqual(call.params.arguments.thread_id, 'task-1');
 });
 
+test('a wrapped payload on the tool-result channel is recognised', async () => {
+  const host = boot();
+  await initialize(host);
+  host.fire('message', {
+    jsonrpc: '2.0',
+    method: 'ui/notifications/tool-result',
+    params: { mcp_tool_result: { _meta: { [META_KEY]: report({ thread: { id: 'task-1', name: 'VIACHANNEL' } }) } } }
+  });
+  assert.ok(host.root.innerHTML.includes('VIACHANNEL'), 'wrapped tool-result payload should render');
+});
+
+test('hydration preserves live:false from the reference', async () => {
+  const host = boot();
+  await initialize(host);
+  host.fire('openai:set_globals', {
+    globals: { toolOutput: { kind: 'usage_card_ref', threadId: 'task-1', live: false, liveUntilEpochMs: 0 } }
+  });
+  const call = host.sent.find(m => m.params?.name === 'refresh_usage_card');
+  assert.ok(call, 'should hydrate');
+  assert.strictEqual(call.params.arguments.live, false, 'must not turn live:false into polling');
+  assert.strictEqual(call.params.arguments.live_until_epoch_ms, 0);
+});
+
+test('hydration preserves a live window when the caller asked for one', async () => {
+  const host = boot();
+  await initialize(host);
+  const deadline = Date.now() + 60000;
+  host.fire('openai:set_globals', {
+    globals: { toolOutput: { kind: 'usage_card_ref', threadId: 'task-1', live: true, liveUntilEpochMs: deadline } }
+  });
+  const call = host.sent.find(m => m.params?.name === 'refresh_usage_card');
+  assert.strictEqual(call.params.arguments.live, true);
+  assert.strictEqual(call.params.arguments.live_until_epoch_ms, deadline);
+});
+
 test('a failed hydration retries instead of stranding the card', async () => {
   const host = boot();
   await initialize(host);

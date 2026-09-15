@@ -159,8 +159,18 @@
         }
         return null;
       };
-      const metaFromResult = result =>
-        result?._meta?.[META_KEY] || result?.result?._meta?.[META_KEY] || null;
+      // Reuse the same normalisation on request responses and tool-result
+      // notifications, so a host that wraps the result on those channels is
+      // recognised too. Never pass a falsy source: reportFromMeta would then
+      // fall back to the persistent window.openai globals.
+      const metaFromResult = result => {
+        for (const source of [result, result?.result, result?.toolResult]) {
+          if (!source || typeof source !== 'object') continue;
+          const found = reportFromMeta(source);
+          if (found) return found;
+        }
+        return null;
+      };
       const notify = (method, params = {}) => {
         window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
       };
@@ -175,7 +185,7 @@
       // otherwise strand the card on its loading message. Retry a bounded number
       // of times, then offer an explicit retry rather than spinning forever.
       const HYDRATE_ATTEMPT_LIMIT = 4;
-      const hydrateFailed = threadId => {
+      const hydrateFailed = ref => {
         root.innerHTML = `<div class="loading">Could not read local Codex usage. <button type="button" id="hydrate-retry">Retry</button></div>`;
         const button = root.querySelector('#hydrate-retry');
         if (button) {
@@ -183,15 +193,17 @@
             hydrateAttempts = 0;
             root.innerHTML = '<div class="loading">Reading local Codex usage…</div>';
             reportHeight();
-            hydrate(threadId);
+            hydrate(ref);
           });
         }
         reportHeight();
       };
-      const hydrate = threadId => {
+      const hydrate = reference => {
+        const ref = typeof reference === 'string' ? { threadId: reference } : (reference || {});
+        const threadId = ref.threadId;
         if (hydrating || !initialized || !threadId) return;
         if (hydrateAttempts >= HYDRATE_ATTEMPT_LIMIT) {
-          hydrateFailed(threadId);
+          hydrateFailed(ref);
           return;
         }
         hydrating = true;
@@ -199,14 +211,15 @@
         const retry = () => {
           hydrating = false;
           const backoff = Math.min(8000, 500 * Math.pow(2, hydrateAttempts));
-          window.setTimeout(() => hydrate(threadId), backoff);
+          window.setTimeout(() => hydrate(ref), backoff);
         };
+        // Preserve the caller's live setting rather than assuming a new window.
         request('tools/call', {
           name: 'refresh_usage_card',
           arguments: {
             thread_id: threadId,
-            live: true,
-            live_until_epoch_ms: Date.now() + 120000
+            live: Boolean(ref.live),
+            live_until_epoch_ms: Number(ref.liveUntilEpochMs || 0)
           }
         }).then(result => {
           const report = metaFromResult(result) || structured(result);
@@ -281,7 +294,7 @@
             data = fromMeta;
           } else if (data && data.kind === 'usage_card_ref' && data.threadId) {
             pendingRef = data;
-            hydrate(data.threadId);
+            hydrate(data);
             return;
           } else {
             return;
