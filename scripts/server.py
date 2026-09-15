@@ -236,7 +236,43 @@ def _usage_pace(limit: dict[str, Any] | None) -> dict[str, Any] | None:
     }
 
 
-def _sum_rollout(path_value: str, start_at: int, end_at: int) -> dict[str, int]:
+def _resolve_event_epochs(
+    raw_epochs: list[float | None],
+    span: tuple[int, int] | None,
+) -> list[float | None]:
+    """Repair rollout files that stamp every token event with one session time.
+
+    Some rollouts (compactions, forks, resumed threads) are written in a single
+    pass, so every record carries the session timestamp instead of the moment
+    each response happened. Summing those by timestamp drops a whole session
+    into one instant and misplaces it across window and day boundaries.
+
+    When a file shows that signature, spread the events evenly across the
+    thread's real lifetime so each one lands at the midpoint of its share.
+    Files with genuine per-event timestamps are returned untouched.
+    """
+    if len(raw_epochs) < 2 or span is None:
+        return raw_epochs
+
+    distinct = {epoch for epoch in raw_epochs if epoch is not None}
+    if len(distinct) != 1:
+        return raw_epochs
+
+    started_at, ended_at = span
+    if ended_at <= started_at:
+        return raw_epochs
+
+    step = (ended_at - started_at) / len(raw_epochs)
+
+    return [started_at + (index + 0.5) * step for index in range(len(raw_epochs))]
+
+
+def _sum_rollout(
+    path_value: str,
+    start_at: int,
+    end_at: int,
+    span: tuple[int, int] | None = None,
+) -> dict[str, int]:
     totals = {
         "inputTokens": 0,
         "cachedInputTokens": 0,
@@ -248,6 +284,9 @@ def _sum_rollout(path_value: str, start_at: int, end_at: int) -> dict[str, int]:
     path = Path(path_value)
     if not path.is_file():
         return totals
+
+    raw_epochs: list[float | None] = []
+    usages: list[dict[str, int]] = []
     with path.open("r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
             try:
@@ -257,17 +296,30 @@ def _sum_rollout(path_value: str, start_at: int, end_at: int) -> dict[str, int]:
             payload = record.get("payload") or {}
             if record.get("type") != "event_msg" or payload.get("type") != "token_count":
                 continue
-            epoch = _event_epoch(record.get("timestamp"))
-            if epoch is None or epoch < start_at or epoch > end_at:
-                continue
             last = (payload.get("info") or {}).get("last_token_usage")
             if not isinstance(last, dict):
                 continue
-            values = _usage_fields(last)
-            for key, value in values.items():
-                totals[key] += value
-            totals["responses"] += 1
+            raw_epochs.append(_event_epoch(record.get("timestamp")))
+            usages.append(_usage_fields(last))
+
+    for epoch, values in zip(_resolve_event_epochs(raw_epochs, span), usages):
+        if epoch is None or epoch < start_at or epoch > end_at:
+            continue
+        for key, value in values.items():
+            totals[key] += value
+        totals["responses"] += 1
     return totals
+
+
+def _thread_span(row: sqlite3.Row) -> tuple[int, int] | None:
+    """Return the thread's (created_at, updated_at) lifetime in epoch seconds."""
+    try:
+        started_at = int(row["created_at"])
+        ended_at = int(row["updated_at"])
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+
+    return (started_at, ended_at) if ended_at > started_at else None
 
 
 def _task_name(row: sqlite3.Row) -> str:
@@ -296,7 +348,8 @@ def usage_dashboard(arguments: dict[str, Any]) -> dict[str, Any]:
         rows = connection.execute(
             """
             SELECT t.id, t.name, t.first_user_message, t.thread_source, t.model,
-                   t.reasoning_effort, t.cwd, t.created_at, t.rollout_path,
+                   t.reasoning_effort, t.cwd, t.created_at, t.updated_at,
+                   t.rollout_path,
                    edge.parent_thread_id, parent.name AS parent_name
             FROM threads AS t
             LEFT JOIN thread_spawn_edges AS edge ON edge.child_thread_id = t.id
@@ -314,7 +367,9 @@ def usage_dashboard(arguments: dict[str, Any]) -> dict[str, Any]:
     overall = 0
     overall_cached = 0
     for row in rows:
-        usage = _sum_rollout(row["rollout_path"], start_at, end_at)
+        usage = _sum_rollout(
+            row["rollout_path"], start_at, end_at, _thread_span(row)
+        )
         if usage["totalTokens"] <= 0:
             continue
         source = row["thread_source"] or "unknown"
