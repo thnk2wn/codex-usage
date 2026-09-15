@@ -29,6 +29,8 @@ PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 DASHBOARD_PATH = PLUGIN_ROOT / "assets" / "dashboard.html"
 CARD_PATH = PLUGIN_ROOT / "assets" / "status-card.html"
 CARD_RESOURCE_URI = "ui://codex-usage/status-card-v2.html"
+LEGACY_CARD_RESOURCE_URIS = {"ui://codex-usage/status-card-v1.html"}
+CARD_HTML = CARD_PATH.read_text(encoding="utf-8")
 _DASHBOARD_SERVER: ThreadingHTTPServer | None = None
 _DASHBOARD_LOCK = threading.Lock()
 _REPORT_CACHE: dict[tuple[str, bool], tuple[float, dict[str, Any]]] = {}
@@ -731,14 +733,14 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
         return {"resourceTemplates": []}
     if method == "resources/read":
         uri = params.get("uri")
-        if uri != CARD_RESOURCE_URI:
+        if uri != CARD_RESOURCE_URI and uri not in LEGACY_CARD_RESOURCE_URIS:
             raise RuntimeError(f"Unknown resource: {uri}")
         return {
             "contents": [
                 {
-                    "uri": CARD_RESOURCE_URI,
+                    "uri": uri,
                     "mimeType": "text/html;profile=mcp-app",
-                    "text": CARD_PATH.read_text(encoding="utf-8"),
+                    "text": CARD_HTML,
                     "_meta": {
                         "ui": {"prefersBorder": False},
                         "openai/widgetDescription": "Compact local Codex usage status with expandable task details.",
@@ -806,6 +808,10 @@ def _self_test() -> None:
         output["cardResource"] = _handle(
             "resources/read", {"uri": CARD_RESOURCE_URI}
         )["contents"][0]["mimeType"]
+        legacy_uri = next(iter(LEGACY_CARD_RESOURCE_URIS))
+        output["legacyCardResource"] = _handle(
+            "resources/read", {"uri": legacy_uri}
+        )["contents"][0]["uri"]
     panel = open_usage_dashboard({"thread_id": current_id, "range": "current_window"})
     with urlopen(panel["dashboardUrl"].replace("/?", "/health?"), timeout=5) as response:
         output["panelHealth"] = json.loads(response.read().decode("utf-8"))["ok"]
