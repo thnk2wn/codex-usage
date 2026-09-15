@@ -1,0 +1,21 @@
+{
+  "name": "thnk2wn",
+  "interface": {
+    "displayName": "thnk2wn"
+  },
+  "plugins": [
+    {
+      "name": "codex-usage",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/thnk2wn/codex-usage.git",
+        "ref": "main"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

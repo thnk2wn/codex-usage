@@ -1,8 +1,6 @@
 # Codex Usage
 
-A private, local-first Codex plugin that attributes raw processed tokens to conversations, subagents, automations, and internal activity.
-
-It is designed for personal installation; publishing it to a shared marketplace is optional.
+A private, local-first Codex plugin that attributes raw processed tokens to conversations, subagents, automations, and internal activity. It supports personal installs, private workspace distribution, and self-contained GitHub release bundles without public marketplace publication.
 
 ## Install
 
@@ -26,7 +24,29 @@ codex plugin add codex-usage@thnk2wn
 
 For teammates, grant read access to this repository and send them the two installation commands above. That is a private Git marketplace: distribution and access stay under GitHub, with no public listing or external approval workflow.
 
-For wider organization distribution, transfer or mirror the repository into the organization and change the Git URL in the install command and `.claude-plugin/marketplace.json`. A public or OpenAI-curated marketplace listing can remain a later step after the plugin has been tested more broadly.
+## Install across a private workspace
+
+A ChatGPT workspace admin can distribute this plugin directly from the private GitHub repository:
+
+1. Make sure the GitHub account used for the import can read this repository and has any required organization approval.
+2. In ChatGPT, open **Admin → Plugins**, then choose **Add → Import marketplace**.
+3. Use `https://github.com/thnk2wn/codex-usage` as the source. Leave **Path** empty. Use `main` for automatic updates, or a release tag such as `v0.1.0` for a pinned rollout.
+4. Review the imported plugin and set its installation policy to **Installed** for the roles that should receive it. Use **Available** instead if members should opt in.
+5. Use **Sync now** when you want to pull an update immediately; otherwise GitHub marketplaces sync daily.
+
+The repository includes both native Codex and Claude-compatible marketplace manifests. Because Codex Usage includes a local MCP server, workspace imports are marked desktop-only; the compact text fallback remains available when a client does not render the inline app.
+
+See [OpenAI's plugin management guide](https://learn.chatgpt.com/docs/enterprise/plugin-management) for current workspace import and access controls.
+
+## Install from a GitHub release
+
+Each release includes a self-contained `codex-usage-vX.Y.Z.zip` marketplace bundle. Download it from [GitHub Releases](https://github.com/thnk2wn/codex-usage/releases), extract it, and run:
+
+```bash
+bash ./codex-usage-vX.Y.Z/install.sh
+```
+
+The release bundle installs entirely from the extracted files. Keep that directory if you want Codex to retain the local marketplace source. Since this repository is private, downloaders still need GitHub read access; a workspace-admin import is more convenient for a broad managed rollout.
 
 ## Public marketplace
 
