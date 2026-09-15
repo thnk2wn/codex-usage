@@ -30,7 +30,9 @@ SERVER_VERSION = "0.2.0"
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 DASHBOARD_PATH = PLUGIN_ROOT / "assets" / "dashboard.html"
 CARD_PATH = PLUGIN_ROOT / "assets" / "status-card.html"
-CARD_RESOURCE_URI = "ui://codex-usage/status-card-v8.html"
+# Active Codex tasks cache the MCP resource catalog. Keep this URI stable across
+# plugin reinstalls and use the manifest version cachebuster for UI revisions.
+CARD_RESOURCE_URI = "ui://codex-usage/status-card-v7.html"
 LEGACY_CARD_RESOURCE_URIS = {
     "ui://codex-usage/status-card-v1.html",
     "ui://codex-usage/status-card-v2.html",
@@ -38,7 +40,6 @@ LEGACY_CARD_RESOURCE_URIS = {
     "ui://codex-usage/status-card-v4.html",
     "ui://codex-usage/status-card-v5.html",
     "ui://codex-usage/status-card-v6.html",
-    "ui://codex-usage/status-card-v7.html",
 }
 CARD_HTML = CARD_PATH.read_text(encoding="utf-8")
 _DASHBOARD_SERVER: ThreadingHTTPServer | None = None
