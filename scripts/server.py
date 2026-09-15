@@ -28,12 +28,13 @@ SERVER_VERSION = "0.1.0"
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 DASHBOARD_PATH = PLUGIN_ROOT / "assets" / "dashboard.html"
 CARD_PATH = PLUGIN_ROOT / "assets" / "status-card.html"
-CARD_RESOURCE_URI = "ui://codex-usage/status-card-v5.html"
+CARD_RESOURCE_URI = "ui://codex-usage/status-card-v6.html"
 LEGACY_CARD_RESOURCE_URIS = {
     "ui://codex-usage/status-card-v1.html",
     "ui://codex-usage/status-card-v2.html",
     "ui://codex-usage/status-card-v3.html",
     "ui://codex-usage/status-card-v4.html",
+    "ui://codex-usage/status-card-v5.html",
 }
 CARD_HTML = CARD_PATH.read_text(encoding="utf-8")
 _DASHBOARD_SERVER: ThreadingHTTPServer | None = None
@@ -178,6 +179,36 @@ def _range_bounds(range_name: str, limit: dict[str, Any] | None) -> tuple[int, i
         int(now.timestamp()),
         f"Last {days} days",
     )
+
+
+def _usage_pace(limit: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Project the aggregate limit from its average pace in the active window."""
+    if not limit or limit.get("usedPercent") is None:
+        return None
+
+    start_at = int(limit["startAt"])
+    resets_at = int(limit["resetsAt"])
+    observed_at = _event_epoch(limit.get("observedAt")) or time.time()
+    observed_at = min(max(observed_at, start_at), resets_at)
+    duration = resets_at - start_at
+    elapsed = observed_at - start_at
+    used_percent = float(limit["usedPercent"])
+    if duration <= 0 or elapsed < 15 * 60 or used_percent <= 0:
+        return None
+
+    used_per_second = used_percent / elapsed
+    projected_percent = used_per_second * duration
+    reaches_limit_at = start_at + (100 / used_per_second)
+    likely_exhausts = reaches_limit_at < resets_at
+    return {
+        "status": "likely_exhausts" if likely_exhausts else "within_limit",
+        "projectedPercent": round(projected_percent, 1),
+        "paceRatio": round(projected_percent / 100, 2),
+        "elapsedPercent": round(elapsed * 100 / duration, 1),
+        "reachesLimitAt": int(reaches_limit_at) if likely_exhausts else None,
+        "observedAt": int(observed_at),
+        "basis": "Average aggregate usage since this limit window began.",
+    }
 
 
 def _sum_rollout(path_value: str, start_at: int, end_at: int) -> dict[str, int]:
@@ -420,26 +451,18 @@ def usage_card(arguments: dict[str, Any]) -> dict[str, Any]:
     context_percent = current["context"]["usedPercent"]
     context_level = "normal"
     if context_percent is not None and context_percent >= 90:
-        context_level = "critical"
+        context_level = "notice"
     elif context_percent is not None and context_percent >= 80:
-        context_level = "warning"
+        context_level = "notice"
 
     latest_output = int((current.get("latestTurn") or {}).get("outputTokens") or 0)
     alerts: list[dict[str, str]] = []
-    if context_level == "critical":
+    if context_percent is not None and context_percent >= 90:
         alerts.append(
             {
-                "level": "critical",
-                "title": "Context is nearly full",
-                "detail": "Consider starting a focused follow-up task soon.",
-            }
-        )
-    elif context_level == "warning":
-        alerts.append(
-            {
-                "level": "warning",
-                "title": "Context is getting full",
-                "detail": "The task may compact as work continues.",
+                "level": "notice",
+                "title": "Automatic compaction may happen soon",
+                "detail": "Codex normally handles this; use a follow-up task only when you want a cleaner task boundary.",
             }
         )
     if latest_output >= 12000:
@@ -458,14 +481,25 @@ def usage_card(arguments: dict[str, Any]) -> dict[str, Any]:
         "sessionUsage": current["ownUsage"],
         "latestTurn": current["latestTurn"],
         "context": {**current["context"], "level": context_level},
+        "subagentCount": len(current["subagents"]),
         "subagentTokens": current["subagentTokens"],
         "combinedTokens": current["combinedTokens"],
         "limit": current["limit"],
+        "pace": _usage_pace(current["limit"]),
         "windowUsage": dashboard["totals"],
         "topTasks": [
             {
                 "id": task["id"],
                 "name": task["name"],
+                "source": task["source"],
+                "model": task["model"],
+                "project": task["project"],
+                "responses": task["responses"],
+                "inputTokens": task["inputTokens"],
+                "cachedInputTokens": task["cachedInputTokens"],
+                "cachedPercent": task["cachedPercent"],
+                "outputTokens": task["outputTokens"],
+                "reasoningOutputTokens": task["reasoningOutputTokens"],
                 "totalTokens": task["totalTokens"],
                 "sharePercent": task["sharePercent"],
             }

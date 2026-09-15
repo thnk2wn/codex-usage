@@ -9,7 +9,7 @@ Use the plugin's read-only tools instead of querying Codex's private SQLite data
 
 ## Native usage card
 
-Call `show_usage_card` by default when the user asks to show, display, view, or check Codex usage. Always pass the current Codex task ID from the task context as `thread_id`; never make an initial call without it. The card first appears as a compact usage-data row. The user can click that row to expand current-context pressure, latest response output, cached input, subagents, account reset, and top tasks.
+Call `show_usage_card` by default when the user asks to show, display, view, or check Codex usage. Always pass the current Codex task ID from the task context as `thread_id`; never make an initial call without it. The card first appears as a compact usage-data row. The user can click that row to expand current-context pressure, latest-response tokens, cached input, direct child tasks, account reset, average-window pace, and the top five tasks. Each top-task row expands to show its token composition.
 
 Mobile Remote currently preserves the tool result but may not render the MCP App iframe. The text fallback is intentionally one line and tells the user to say `usage details`. When the user asks for those details after a text-only result, call `show_usage_card` again and summarize its structured result in text: context input/window, latest output, cached input, subagents, account usage/reset, alerts, and top tasks. Do not claim that the one-line mobile result is clickable or expandable.
 
@@ -49,5 +49,7 @@ Set `include_internal` only when the user explicitly wants internal approval/gua
 ## Interpretation
 
 Always describe task values as **raw processed tokens**, not billing or exact quota percentage. Codex's local transcripts expose token counters and coarse aggregate limit snapshots, but not the server-side formula that converts work into subscription capacity. Cached input, model choice, reasoning effort, automations, subagents, and internal reviews may be weighted differently.
+
+The account pace projection uses the aggregate limit percentage and elapsed time in the active window. Describe it as a changing estimate, not a guarantee. It does not infer pace from raw per-task tokens.
 
 The plugin is local-only. Do not imply that its data was uploaded, published, or submitted to a marketplace.

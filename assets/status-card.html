@@ -10,32 +10,43 @@
     html, body { min-height: 48px; }
     body { margin: 0; color: #17211f; background: transparent; }
     .card { border: 1px solid #dce4e1; border-radius: 12px; overflow: hidden; background: #fbfdfc; }
-    summary { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 11px 13px; cursor: pointer; list-style: none; }
+    .card > details > summary { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 11px 13px; cursor: pointer; list-style: none; }
     summary::-webkit-details-marker { display: none; }
     .mark { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 7px; color: white; background: #0f766e; font-weight: 750; font-size: 12px; }
     .line { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 10px; }
     .title { font-size: 13px; font-weight: 720; }
     .status { color: #52615d; font-size: 12px; font-variant-numeric: tabular-nums; }
     .chevron { color: #71807c; transition: transform .16s ease; }
-    details[open] .chevron { transform: rotate(180deg); }
+    .card > details[open] > summary .chevron { transform: rotate(180deg); }
     .detail { border-top: 1px solid #e5ebe9; padding: 13px; }
     .task { margin: 0 0 12px; font-size: 15px; font-weight: 720; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .meter { height: 6px; border-radius: 99px; overflow: hidden; background: #e5ebe9; margin: 6px 0 13px; }
     .meter > span { display: block; height: 100%; border-radius: inherit; background: #0f766e; }
-    .meter.warning > span { background: #b7791f; }
-    .meter.critical > span { background: #c2413a; }
+    .meter.notice > span { background: #6f8f88; }
     .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
     .metric { min-width: 0; padding: 9px; border-radius: 8px; background: #f0f5f3; }
-    .metric span { display: block; color: #64736f; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+    .metric span { display: flex; align-items: center; gap: 4px; color: #64736f; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
     .metric strong { display: block; margin-top: 3px; font-size: 14px; font-variant-numeric: tabular-nums; }
+    .info { width: 13px; height: 13px; display: inline-grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; font-size: 8px; font-style: normal; line-height: 1; opacity: .8; cursor: help; }
     .alert { margin-top: 10px; padding: 9px 10px; border-left: 3px solid #b7791f; border-radius: 5px; background: #fff7e8; font-size: 12px; }
-    .alert.critical { border-color: #c2413a; background: #fff0ee; }
+    .alert.notice { border-color: #6f8f88; background: #edf5f2; }
     .alert strong { display: block; margin-bottom: 2px; }
+    .pace { margin-top: 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 9px 10px; border-radius: 7px; background: #eef4f2; font-size: 11px; }
+    .pace.risk { background: #fff7e8; }
+    .pace strong { display: block; font-size: 12px; }
+    .pace span { color: #64736f; }
+    .pace .projection { font-variant-numeric: tabular-nums; white-space: nowrap; }
     h3 { margin: 14px 0 6px; color: #52615d; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
-    .tasks { display: grid; gap: 5px; }
-    .row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 9px; align-items: center; font-size: 11px; }
-    .row .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .row .share { color: #71807c; }
+    .tasks { display: grid; gap: 3px; }
+    .task-row { border-bottom: 1px solid #e5ebe9; }
+    .task-row:last-child { border-bottom: 0; }
+    .task-row > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; align-items: center; padding: 4px 0; cursor: pointer; list-style: none; font-size: 11px; }
+    .task-row .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .task-row .share, .task-caret { color: #71807c; }
+    .task-caret { transition: transform .16s ease; }
+    .task-row[open] .task-caret { transform: rotate(180deg); }
+    .task-breakdown { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 10px; padding: 4px 0 8px; color: #64736f; font-size: 10px; line-height: 1.35; }
+    .task-breakdown strong { color: inherit; font-variant-numeric: tabular-nums; }
     .note { margin: 12px 0 0; color: #71807c; font-size: 10px; line-height: 1.35; }
     .loading { padding: 12px 14px; color: #64736f; font-size: 12px; }
     @media (max-width: 520px) { .grid { grid-template-columns: repeat(2, 1fr); } .status { flex-basis: 100%; } }
@@ -46,9 +57,11 @@
       .detail { border-color: #34403d; }
       .meter { background: #34403d; }
       .metric { background: #202927; }
-      .metric span, .chevron, .row .share, .note, .loading { color: #9caaa6; }
+      .metric span, .chevron, .task-row .share, .task-caret, .task-breakdown, .pace span, .note, .loading { color: #9caaa6; }
       .alert { background: #352a18; }
-      .alert.critical { background: #351e1d; }
+      .alert.notice, .pace { background: #202927; }
+      .pace.risk { background: #352a18; }
+      .task-row { border-color: #34403d; }
     }
   </style>
 </head>
@@ -64,7 +77,7 @@
       const pct = n => n == null ? '—' : `${Number(n).toFixed(Number(n) < 10 ? 1 : 0)}%`;
       const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
       const when = epoch => epoch ? new Intl.DateTimeFormat(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }).format(new Date(epoch * 1000)) : '—';
-      const metric = (label, value) => `<div class="metric"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+      const metric = (label, value, help) => `<div class="metric" title="${esc(help)}"><span>${esc(label)}<i class="info" aria-label="${esc(help)}">i</i></span><strong>${esc(value)}</strong></div>`;
       const notify = (method, params = {}) => {
         window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
       };
@@ -88,32 +101,43 @@
         const session = data.sessionUsage || {};
         const latest = data.latestTurn || {};
         const limit = data.limit || {};
-        const account = limit.usedPercent == null ? 'Account —' : `Account ${pct(limit.usedPercent)}`;
-        const taskRows = (data.topTasks || []).map(task => `<div class="row"><span class="name">${esc(task.name)}</span><strong>${compact(task.totalTokens)}</strong><span class="share">${pct(task.sharePercent)}</span></div>`).join('');
+        const windowDays = Number(limit.windowMinutes || 0) / 1440;
+        const windowName = Number.isInteger(windowDays) && windowDays > 0 ? `${windowDays}-day` : 'Account';
+        const account = limit.usedPercent == null ? `${windowName} —` : `${windowName} ${pct(limit.usedPercent)}`;
+        const taskRows = (data.topTasks || []).map(task => `<details class="task-row"><summary title="Show token composition"><span class="name">${esc(task.name)}</span><strong>${compact(task.totalTokens)}</strong><span class="share">${pct(task.sharePercent)}</span><span class="task-caret">⌄</span></summary><div class="task-breakdown"><span>Input <strong>${compact(task.inputTokens)}</strong></span><span>Cached <strong>${pct(task.cachedPercent)}</strong></span><span>Output <strong>${compact(task.outputTokens)}</strong></span><span>Reasoning <strong>${compact(task.reasoningOutputTokens)}</strong></span><span>Responses <strong>${compact(task.responses)}</strong></span><span>${esc(task.model || task.source || 'unknown')}</span></div></details>`).join('');
         const alerts = (data.alerts || []).map(alert => `<div class="alert ${esc(alert.level)}"><strong>${esc(alert.title)}</strong>${esc(alert.detail)}</div>`).join('');
+        const pace = data.pace;
+        let paceRow = '';
+        if (pace) {
+          const risk = pace.status === 'likely_exhausts';
+          const headline = risk ? `Likely reaches the limit ${when(pace.reachesLimitAt)}` : 'On pace to stay within the limit';
+          const detail = `${pct(pace.elapsedPercent)} of time elapsed · ${pct(limit.usedPercent)} used`;
+          paceRow = `<div class="pace ${risk ? 'risk' : ''}" title="Projection uses the average aggregate usage rate since this account window began; it will change as your pace changes."><div><strong>${esc(headline)}</strong><span>${esc(detail)}</span></div><strong class="projection">${pct(pace.projectedPercent)} projected</strong></div>`;
+        }
         const expanded = Boolean(window.openai?.widgetState?.expanded);
         root.innerHTML = `
           <details ${expanded ? 'open' : ''}>
             <summary>
               <span class="mark">CU</span>
-              <span class="line"><span class="title">Codex usage</span><span class="status">Context ${pct(context.usedPercent)} · Session ${compact(data.combinedTokens)} raw · ${account}</span></span>
+              <span class="line"><span class="title">Codex usage</span><span class="status">Context ${pct(context.usedPercent)} · Task ${compact(data.combinedTokens)} raw · ${account}</span></span>
               <span class="chevron" aria-hidden="true">⌄</span>
             </summary>
             <section class="detail">
               <p class="task" title="${esc(data.thread?.name)}">${esc(data.thread?.name || 'Current conversation')}</p>
               <div class="meter ${esc(context.level)}"><span style="width:${Math.min(100, Number(context.usedPercent || 0))}%"></span></div>
               <div class="grid">
-                ${metric('Context', `${compact(context.inputTokens)} / ${compact(context.windowTokens)}`)}
-                ${metric('Session', `${compact(data.combinedTokens)} raw`)}
-                ${metric('Cached input', pct(session.cachedPercent))}
-                ${metric('Latest output', compact(latest.outputTokens))}
-                ${metric('Latest processed', compact(latest.totalTokens))}
-                ${metric('Subagents', compact(data.subagentTokens))}
-                ${metric('Account window', pct(limit.usedPercent))}
-                ${metric('Resets', when(limit.resetsAt))}
+                ${metric('Context input', `${compact(context.inputTokens)} / ${compact(context.windowTokens)}`, 'Input tokens sent to the latest model response compared with this model context window. It can drop after automatic compaction.')}
+                ${metric('Task + children', `${compact(data.combinedTokens)} raw`, 'Cumulative raw processed tokens in this task plus its directly spawned child tasks. Repeated context is counted again on every model response.')}
+                ${metric('Input cache hit', pct(session.cachedPercent), 'Share of this task’s cumulative input tokens served from cache. Cached tokens are a subset of input, not additional tokens.')}
+                ${metric('Last output', compact(latest.outputTokens), 'Output tokens from the latest recorded model response—not characters. Reasoning tokens are included within output tokens.')}
+                ${metric('Last processed', compact(latest.totalTokens), 'Input plus output tokens for the latest recorded model response. Cached input and reasoning are subsets, not extra tokens.')}
+                ${metric('Child tasks', `${data.subagentCount || 0} · ${compact(data.subagentTokens)} raw`, 'Direct subagents spawned by this task, followed by their cumulative raw processed tokens.')}
+                ${metric(`${windowName} usage`, pct(limit.usedPercent), 'The latest aggregate account-limit snapshot for the active window. This is authoritative for the percentage, but Codex does not expose its per-task weighting formula.')}
+                ${metric('Limit resets', when(limit.resetsAt), 'When the active aggregate account-limit window resets.')}
               </div>
+              ${paceRow}
               ${alerts}
-              <h3>Top tasks this account window</h3>
+              <h3>Top 5 tasks this limit window · click a row for composition</h3>
               <div class="tasks">${taskRows || '<span class="note">No recorded activity.</span>'}</div>
               <p class="note">Raw local token counters are attribution clues, not an authoritative quota ledger. Cached input, model choice, reasoning, and internal work may be weighted differently.</p>
             </section>

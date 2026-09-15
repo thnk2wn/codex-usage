@@ -6,7 +6,7 @@ It is designed for personal installation; publishing it to a shared marketplace 
 
 ## UI surfaces
 
-- `show_usage_card` renders a compact native usage-data row directly in the conversation, without a separate tool disclosure after loading. Clicking the row expands the latest turn, cached input, subagents, reset time, alerts, and top tasks.
+- `show_usage_card` renders a compact native usage-data row directly in the conversation, without a separate tool disclosure after loading. Clicking the row expands clearly defined token metrics, a limit-window pace projection, a subdued compaction notice, and the top five tasks. Each task row expands to show why its raw total is large.
 - Mobile Remote falls back to a single-line status result when it does not render the MCP App iframe; say `usage details` for a text breakdown.
 - `open_usage_dashboard` starts the optional private localhost dashboard for a larger cross-task view.
 - `current_conversation_usage` returns a concise snapshot for the active conversation when a panel is not needed.
