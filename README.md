@@ -1,6 +1,6 @@
 # Codex Usage
 
-A private, local-first Codex plugin that attributes raw processed tokens to conversations, subagents, automations, and internal activity. It supports personal installs, private workspace distribution, and self-contained GitHub release bundles without public marketplace publication.
+A local-first Codex plugin that attributes raw processed tokens to conversations, subagents, automations, and internal activity. It reads local Codex metadata and never uploads it. It supports personal installs, workspace distribution, and self-contained GitHub release bundles without public marketplace publication.
 
 Collapsed warning state:
 
@@ -12,14 +12,14 @@ Expanded details:
 
 ## Install
 
-This repository is also a small Git marketplace, so installation does not require publication or OpenAI marketplace review.
+This repository is also a small Git marketplace, so installation does not require publication or OpenAI marketplace review. It is public, so anyone can install it directly.
 
 ```bash
 codex plugin marketplace add git@github.com:thnk2wn/codex-usage.git --ref main
 codex plugin add codex-usage@thnk2wn
 ```
 
-Start a new Codex task after installation so the skill and tools are loaded. The repository is currently private, so the installing user needs GitHub read access and working SSH credentials.
+Start a new Codex task after installation so the skill and tools are loaded. The commands above use SSH, so they need working SSH credentials; swap in the HTTPS URL if you would rather not use SSH.
 
 Automatic cards require a one-time trust review for the bundled `UserPromptSubmit` hook. Codex Desktop does not currently surface that pending review, so complete it in Terminal:
 
@@ -37,17 +37,17 @@ codex plugin marketplace upgrade thnk2wn
 codex plugin add codex-usage@thnk2wn
 ```
 
-## Share privately
+## Share with a team
 
-Without workspace-admin access, private sharing is per user rather than an organization-wide deployment. Grant each teammate read access to this repository and send them the two installation commands above, or have them use the GitHub release bundle below. Distribution and access stay under GitHub, with no public listing or external approval workflow.
+Without workspace-admin access, sharing is per user rather than an organization-wide deployment. Send teammates the two installation commands above, or have them use the GitHub release bundle below. Distribution stays under GitHub, with no marketplace listing or external approval workflow.
 
 Each teammate must install the plugin themselves. Their workspace must also permit personal or local plugins. If workspace policy disables those installations, there is no supported admin-free bypass; a workspace admin must allow the plugin or import it for the workspace.
 
-## Install across a private workspace
+## Install across a workspace
 
-A ChatGPT workspace admin is required to distribute this plugin automatically across a private workspace. The admin can import it directly from the private GitHub repository:
+A ChatGPT workspace admin is required to distribute this plugin automatically across a workspace. The admin can import it directly from the GitHub repository:
 
-1. Make sure the GitHub account used for the import can read this repository and has any required organization approval.
+1. Make sure the GitHub account used for the import has any required organization approval.
 2. In ChatGPT, open **Admin → Plugins**, then choose **Add → Import marketplace**.
 3. Use `https://github.com/thnk2wn/codex-usage` as the source. Leave **Path** empty. Use `main` for automatic updates, or a release tag such as `v0.2.0` for a pinned rollout.
 4. Review the imported plugin and set its installation policy to **Installed** for the roles that should receive it. Use **Available** instead if members should opt in.
@@ -65,13 +65,13 @@ Each release includes a self-contained `codex-usage-vX.Y.Z.zip` marketplace bund
 bash ./codex-usage-vX.Y.Z/install.sh
 ```
 
-The release bundle installs entirely from the extracted files. Keep that directory if you want Codex to retain the local marketplace source. Since this repository is private, downloaders still need GitHub read access; a workspace-admin import is more convenient for a broad managed rollout.
+The release bundle installs entirely from the extracted files. Keep that directory if you want Codex to retain the local marketplace source. A workspace-admin import is more convenient for a broad managed rollout.
 
 ## Public marketplace
 
 This build is intentionally not submitted to OpenAI's universal Plugins Directory. Public submission requires a verified publisher, production listing and policy materials, reproducible test cases, automated scanning, and OpenAI review. MCP-backed submissions normally also require a stable public HTTPS server.
 
-Codex Usage instead runs its MCP server locally because its core purpose is reading local Codex metadata without uploading it. Publishing it universally would therefore require either explicit OpenAI support for a local MCP design or a privacy-sensitive architectural change. The private Git marketplace above keeps the current local-only behavior intact.
+Codex Usage instead runs its MCP server locally because its core purpose is reading local Codex metadata without uploading it. Publishing it universally would therefore require either explicit OpenAI support for a local MCP design or a privacy-sensitive architectural change. The Git marketplace above keeps the current local-only behavior intact.
 
 See [OpenAI's plugin submission documentation](https://developers.openai.com/plugins/deploy/submission) for the current public review requirements.
 
@@ -92,6 +92,20 @@ The trusted prompt hook only decides whether a card is due and asks Codex to inv
 Once that header is rendered, the embedded card requests the heavier limit-window scan asynchronously. Expanding immediately may briefly show **Loading cross-task breakdown…** before the top-five task list arrives. That scan is cached for five minutes, while the current-task values can continue refreshing every few seconds for up to two minutes. This background hydration does not hold up the agent after the initial compact result has returned.
 
 The five-minute automatic-card cadence limits how often a new conversation item is added; it is separate from the short-lived refreshes inside an existing card. Change the cadence from any expanded card. The preference is shared globally, while the last-rendered timestamp is tracked per task.
+
+## What the plugin itself costs
+
+Cards are MCP tool results, so they occupy conversation context and are not free. Each automatic card costs roughly 900 tokens: about 60 for the hook instruction and about 800 for the card payload.
+
+The larger cost is not the card itself but how long it lives. A card stays in conversation history and is re-read on every later turn, so one card early in a 500-turn session is re-read hundreds of times. In one measured week, cards accounted for about 0.65% of raw token usage, and two long sessions produced over 98% of it. Most of those re-reads are cache hits, so the cost against your actual quota is a fraction of the raw number.
+
+Practical consequence: **session length matters far more than card frequency.** Lowering the cadence in a short session saves very little. Avoiding automatic cards in very long sessions saves a lot.
+
+To reduce or eliminate the cost:
+
+- **Zero in-conversation cost.** Set automatic cards to **off** from any expanded card, then run `open_usage_dashboard` once and leave the browser tab open. The dashboard refreshes itself every 20 seconds directly from local data and never enters the model's context. You keep full visibility at no token cost.
+- **Lower the cadence.** Moving from every 5 minutes to every 15 minutes cuts card volume roughly threefold. Use this in long sessions especially.
+- **Ask on demand.** With automatic cards off, `show_usage_card` still works whenever you want a snapshot, and `current_conversation_usage` returns a much smaller text-only answer.
 
 ## Data and privacy
 
