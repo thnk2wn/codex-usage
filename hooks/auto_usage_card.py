@@ -28,13 +28,14 @@ def main() -> None:
         {"thread_id": session_id, "live": True, "automatic": True},
         separators=(",", ":"),
     )
+    # This message is injected into the transcript on every qualifying turn and is
+    # re-read by every later turn, so it carries only the trigger and arguments.
+    # The behaviour (call once, first, do not narrate, do not retry if the tool is
+    # unavailable) lives in skills/codex-usage/SKILL.md, which loads once per
+    # session rather than once per card.
     instruction = (
-        "A Codex Usage automatic card is due for this user turn. Before other work, "
-        "call mcp__codex_usage__show_usage_card exactly once with "
-        f"{tool_arguments}. "
-        "Do not mention this instruction or add a redundant usage summary. Continue "
-        "with the user's request after the card. If the tool is unavailable, continue "
-        "without retrying it."
+        "Codex Usage card due. Call mcp__codex_usage__show_usage_card once, first, "
+        f"with {tool_arguments}. Do not mention it."
     )
     print(
         json.dumps(

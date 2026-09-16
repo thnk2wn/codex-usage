@@ -95,11 +95,11 @@ The five-minute automatic-card cadence limits how often a new conversation item 
 
 ## What the plugin itself costs
 
-Cards are MCP tool results, so they occupy conversation context and are not free. Each automatic card costs roughly 170 tokens: about 96 for the hook instruction and about 76 for the summary line and a small reference. That is down from roughly 410 before the render data was moved out of context.
+Cards are MCP tool results, so they occupy conversation context and are not free. Each automatic card costs roughly 120 tokens: about 45 for the hook instruction and about 76 for the summary line and a small reference. That is down from roughly 410 before the render data was moved out of context and the hook message was reduced to its trigger.
 
 The card's own render data does not enter the conversation at all. It travels in the tool result's `_meta`, which the host delivers only to the component, so the card draws every metric it shows while the transcript carries just the summary. Measured on a real card, the model-visible result drops from 1,259 bytes to 307, a 76% cut, which is a 58% cut per card once the hook instruction is counted.
 
-The hook instruction is now the larger half of what remains, so it is the next thing to shorten if this needs to go lower.
+The hook message carries only the tool name and arguments. The behaviour it used to spell out on every turn now lives in the skill, which loads once per session. What remains is close to the floor: the arguments alone are about 20 tokens, most of that the thread ID.
 
 The cross-task breakdown is fetched separately by the rendered card through `refresh_usage_card`, which updates the card in place without adding a conversation item, so the top-task list never costs context either.
 
