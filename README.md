@@ -99,7 +99,7 @@ Cards are MCP tool results, so they occupy conversation context and are not free
 
 The card's own render data does not enter the conversation at all. It travels in the tool result's `_meta`, which the host delivers only to the component, so the card draws every metric it shows while the transcript carries just the summary. Measured on a real card, the model-visible result drops from 1,259 bytes to 307, a 76% cut, which is a 58% cut per card once the hook instruction is counted.
 
-The hook message carries only the tool name and arguments. The behaviour it used to spell out on every turn now lives in the skill, which loads once per session. What remains is close to the floor: the arguments alone are about 20 tokens, most of that the thread ID.
+The hook message carries the tool name, the arguments, and a one-line reminder not to narrate the call, which stays in-turn because the skill alone is a weaker guarantee against the model announcing the card. Everything else it used to spell out on every turn now lives in the skill, which loads once per session. What remains is close to the floor: the arguments alone are about 20 tokens, most of that the thread ID.
 
 The cross-task breakdown is fetched separately by the rendered card through `refresh_usage_card`, which updates the card in place without adding a conversation item, so the top-task list never costs context either.
 
