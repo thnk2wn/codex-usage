@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ask Codex to render a fresh usage card when this task's interval is due."""
+"""Ask Codex to render a usage card after a prompt or during long work."""
 
 from __future__ import annotations
 
@@ -20,8 +20,16 @@ def main() -> None:
     except (json.JSONDecodeError, OSError):
         return
 
+    hook_event = event.get("hook_event_name") or "UserPromptSubmit"
+    if hook_event not in {"UserPromptSubmit", "PostToolUse"}:
+        return
+    if hook_event == "PostToolUse":
+        tool_name = str(event.get("tool_name") or "")
+        if not tool_name or tool_name.startswith("mcp__codex_usage__"):
+            return
+
     session_id = str(event.get("session_id") or "").strip()
-    if not claim_auto_card(session_id):
+    if not claim_auto_card(session_id, tool_event=hook_event == "PostToolUse"):
         return
 
     tool_arguments = json.dumps(
@@ -41,7 +49,7 @@ def main() -> None:
         json.dumps(
             {
                 "hookSpecificOutput": {
-                    "hookEventName": "UserPromptSubmit",
+                    "hookEventName": hook_event,
                     "additionalContext": instruction,
                 }
             },

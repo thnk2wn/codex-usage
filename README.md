@@ -21,12 +21,12 @@ codex plugin add codex-usage@thnk2wn
 
 Start a new Codex task after installation so the skill and tools are loaded. The commands above use SSH, so they need working SSH credentials; swap in the HTTPS URL if you would rather not use SSH.
 
-Automatic cards require a one-time trust review for the bundled `UserPromptSubmit` hook. Codex Desktop does not currently surface that pending review, so complete it in Terminal:
+Automatic cards require a one-time trust review for the bundled `UserPromptSubmit` and `PostToolUse` hooks. Codex Desktop may not surface a pending review, so complete it in Terminal:
 
 1. Run `codex`.
 2. Choose **Review hooks** in the startup warning, or enter `/hooks` after Codex opens.
-3. Open **UserPromptSubmit** and verify the source is **Plugin - codex-usage@...** and the command is `python3 "$PLUGIN_ROOT/hooks/auto_usage_card.py"`.
-4. Press `t` to trust that hook, then exit the CLI and start a new desktop task.
+3. Open **UserPromptSubmit** and **PostToolUse** in turn. Verify each source is **Plugin - codex-usage@...** and its command is `python3 "$PLUGIN_ROOT/hooks/auto_usage_card.py"`.
+4. Press `t` to trust each hook, then exit the CLI and start a new desktop task.
 
 Trust is saved globally for that exact hook definition. If a later plugin update changes the hook, Codex will require another review.
 
@@ -77,21 +77,21 @@ See [OpenAI's plugin submission documentation](https://developers.openai.com/plu
 
 ## UI surfaces
 
-- Automatic cards are rate-limited to one per task every 15 minutes by default. A qualifying user prompt creates a **new** compact snapshot near that turn; it refreshes in place for up to two minutes while work continues, then freezes in conversation history. Older cards are never rewritten.
+- Automatic cards are rate-limited to one per task every 15 minutes by default. A qualifying user prompt or a tool completion during a long turn creates a **new** compact snapshot near that point; each visible card refreshes in place every 15 seconds for up to 20 minutes. A new card never overwrites a previous card.
 - The minimized header includes the snapshot time and remaining account capacity. It turns amber when 15% or less remains or current pace projects over the limit, and red when 10% or less remains. Clicking it expands clearly defined token metrics, a limit-window pace projection, a subdued compaction notice, the top five tasks, and a global automatic-card frequency control (every turn, 30 seconds, 1/5/15 minutes, or off). Open card instances synchronize that preference when the client permits it, and every historical card rechecks it when expanded.
 - `show_usage_card` can also render a card on demand. `refresh_usage_card` is used only by an already-rendered card, so live updates do not add more conversation items.
 - Mobile Remote falls back to a single-line status result when it does not render the MCP App iframe; say `usage details` for a text breakdown. That path uses `usage_details`, which returns the same report as model-readable data, because a card's own render payload is delivered to the component only.
 - `open_usage_dashboard` starts the optional private localhost dashboard for a larger cross-task view.
-- `current_conversation_usage` returns a concise snapshot for the active conversation when a panel is not needed.
+- The old text-only `current_conversation_usage` tool is retained for compatibility but hidden from the model so automatic card requests cannot be routed into raw JSON. Ask for a usage card to see a concise header with expandable details.
 - `usage_dashboard` returns structured cross-task data for the current limit window, today, or rolling 7/30-day ranges.
 
 ## How automatic cards work
 
-The trusted prompt hook only decides whether a card is due and asks Codex to invoke it; it does not scan usage data itself. The first tool result reads the current task and latest account-limit snapshot, so the compact header can appear quickly with context, task tokens, remaining capacity, warning color, and snapshot time.
+The trusted prompt and tool-completion hooks only decide whether a card is due and ask Codex to invoke it; they do not scan usage data themselves. The first tool result reads the current task and latest account-limit snapshot, so the compact header can appear quickly with context, task tokens, remaining capacity, warning color, and snapshot time. The tool-completion hook runs in the background, so it does not delay the tool that just finished. If a long operation has no tool completion, the next card waits until a tool completes or you send another prompt.
 
-Once that header is rendered, the embedded card requests the heavier limit-window scan asynchronously. Expanding immediately may briefly show **Loading cross-task breakdown…** before the top-five task list arrives. That scan is cached for five minutes, while the current-task values can continue refreshing every few seconds for up to two minutes. This background hydration does not hold up the agent after the initial compact result has returned.
+Once that header is rendered, the embedded card requests the heavier limit-window scan asynchronously. Expanding immediately may briefly show **Loading cross-task breakdown…** before the top-five task list arrives. That scan is cached for five minutes, while a visible card's current-task values refresh every 15 seconds for up to 20 minutes. This background hydration does not hold up the agent after the initial compact result has returned.
 
-The 15-minute automatic-card cadence limits how often a new conversation item is added; it is separate from the short-lived refreshes inside an existing card. Change the cadence from any expanded card. The preference is shared globally, while the last-rendered timestamp is tracked per task.
+The 15-minute automatic-card cadence limits how often a new conversation item is added; it is separate from refreshes inside an existing card. Change the cadence from any expanded card. The preference is shared globally, while the last-rendered timestamp is tracked per task. **Every turn** creates at most one automatic card at prompt submission; tool completions do not add more in that mode.
 
 ## What the plugin itself costs
 
@@ -113,13 +113,13 @@ To reduce the cost:
 
 - **Zero ongoing cost per task.** Set automatic cards to **off** from any expanded card, then ask for the dashboard and leave the panel open. Opening it returns a tool result like any other tool, so it costs roughly 100 tokens one time. Every refresh after that is served from the browser to the local server every 20 seconds and never enters the model's context, so the ongoing cost really is zero. Note that the dashboard server lives inside the task's local MCP process and stops when that task closes, and it binds a fresh random port each time, so a new task means paying that one-time cost again on a new URL.
 - **Lower the cadence.** Moving from every 5 minutes to every 15 minutes cuts card volume roughly threefold. Use this in long sessions especially.
-- **Ask on demand.** With automatic cards off, `show_usage_card` still works whenever you want a snapshot, and `current_conversation_usage` returns a much smaller text-only answer.
+- **Ask on demand.** With automatic cards off, `show_usage_card` still works whenever you want a snapshot.
 
 ## Data and privacy
 
-The MCP server reads `~/.codex/state_5.sqlite` and the rollout files already referenced by that database without modifying them. It binds its optional dashboard only to `127.0.0.1`, uses no external network access, and stores no copy of task content. Task names are displayed locally in the card and dashboard. The only plugin writes are the selected automatic-card preference and per-task throttle timestamps under `~/.codex/codex-usage/`.
+The MCP server reads `~/.codex/state_5.sqlite` and the rollout files already referenced by that database without modifying them. It binds its optional dashboard only to `127.0.0.1`, uses no external network access, and stores no copy of task content. Task names are displayed locally in the card and dashboard. The only plugin writes under `~/.codex/codex-usage/` are the selected automatic-card preference, per-task throttle timestamps, and an empty SQLite lock file that prevents parallel tool completions from claiming duplicate cards.
 
-Cards are still MCP tool-result UI: the plugin's `UserPromptSubmit` hook asks Codex to invoke the card at the start of a qualifying user turn. It cannot push unsolicited UI into an idle conversation. The hook stores only its per-task last-card time, and preferences live in `~/.codex/codex-usage/`.
+Cards are still MCP tool-result UI: the plugin's `UserPromptSubmit` hook asks Codex to invoke the card at the start of a qualifying user turn; its `PostToolUse` hook can request another during a long running turn after the interval elapses. It cannot push unsolicited UI into an idle conversation. The hooks store only the per-task last-card time, and preferences live in `~/.codex/codex-usage/`.
 
 Plugin hooks must be reviewed and trusted before Codex will run them. Use the CLI `/hooks` flow described under **Install**; the current desktop app silently skips an unreviewed hook rather than showing the review UI. Until the hook is trusted, cards remain available on demand but will not appear automatically.
 

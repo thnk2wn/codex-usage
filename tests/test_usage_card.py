@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,11 +17,19 @@ class UsageCardTest(unittest.TestCase):
     def test_component_only_tools_are_hidden_from_the_model(self) -> None:
         descriptors = {tool["name"]: tool for tool in server.TOOLS}
 
-        for name in ("refresh_usage_card", "get_usage_preferences"):
+        for name in (
+            "refresh_usage_card",
+            "get_usage_preferences",
+            "current_conversation_usage",
+        ):
             self.assertEqual(
                 descriptors[name]["_meta"]["ui"]["visibility"],
                 ["app"],
             )
+        self.assertEqual(
+            descriptors["show_usage_card"]["_meta"]["ui"]["visibility"],
+            ["model", "app"],
+        )
 
     def test_initial_card_skips_dashboard_then_refresh_loads_it(self) -> None:
         current = {
@@ -91,6 +100,13 @@ class UsageCardTest(unittest.TestCase):
             self.assertFalse(initial["detailsLoaded"])
             self.assertIsNone(initial["windowUsage"])
             self.assertEqual(initial["topTasks"], [])
+            generated_ms = datetime.fromisoformat(initial["generatedAt"]).timestamp() * 1000
+            self.assertAlmostEqual(
+                initial["liveRefresh"]["untilEpochMs"] - generated_ms,
+                20 * 60 * 1000,
+                delta=1,
+            )
+            self.assertEqual(initial["liveRefresh"]["intervalMs"], 15_000)
             scan.assert_not_called()
 
             refreshed = server._handle(

@@ -1,5 +1,5 @@
 {
-  "description": "Render rate-limited inline Codex Usage snapshots after user prompts.",
+  "description": "Render rate-limited inline Codex Usage snapshots after prompts and during long work.",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -7,6 +7,20 @@
           {
             "type": "command",
             "command": "python3 \"$PLUGIN_ROOT/hooks/auto_usage_card.py\"",
+            "timeout": 3,
+            "additionalContextLimit": 300
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$PLUGIN_ROOT/hooks/auto_usage_card.py\"",
+            "async": true,
             "timeout": 3,
             "additionalContextLimit": 300
           }

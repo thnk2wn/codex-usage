@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import time
 from pathlib import Path
 from typing import Any
@@ -63,33 +64,50 @@ def set_auto_card_interval(interval_seconds: int) -> dict[str, Any]:
     return get_preferences()
 
 
-def claim_auto_card(session_id: str, now: float | None = None) -> bool:
+def claim_auto_card(
+    session_id: str, now: float | None = None, *, tool_event: bool = False
+) -> bool:
     """Return true and reserve this task's next automatic card when it is due."""
     if not session_id:
         return False
 
     preferences = get_preferences()
     interval = int(preferences["autoCardIntervalSeconds"])
-    if interval < 0:
+    if interval < 0 or (tool_event and interval == 0):
         return False
 
     current = time.time() if now is None else now
     state_path = _data_dir() / "auto-card-state.json"
     state = _read_json(state_path)
     sessions = state.get("sessions")
-    if not isinstance(sessions, dict):
-        sessions = {}
+    if isinstance(sessions, dict):
+        previous = sessions.get(session_id)
+        if isinstance(previous, (int, float)) and current - float(previous) < interval:
+            return False
 
-    previous = sessions.get(session_id)
-    if isinstance(previous, (int, float)) and current - float(previous) < interval:
-        return False
+    # Parallel tool completions can invoke the hook at once. Serialize the
+    # recheck and claim across processes so only one card is requested.
+    _data_dir().mkdir(parents=True, exist_ok=True)
+    lock = sqlite3.connect(_data_dir() / "auto-card-lock.sqlite3", timeout=3)
+    try:
+        lock.execute("BEGIN IMMEDIATE")
+        state = _read_json(state_path)
+        sessions = state.get("sessions")
+        if not isinstance(sessions, dict):
+            sessions = {}
+        previous = sessions.get(session_id)
+        if isinstance(previous, (int, float)) and current - float(previous) < interval:
+            return False
 
-    cutoff = current - STATE_RETENTION_SECONDS
-    sessions = {
-        key: value
-        for key, value in sessions.items()
-        if isinstance(value, (int, float)) and float(value) >= cutoff
-    }
-    sessions[session_id] = current
-    _write_json(state_path, {"sessions": sessions})
-    return True
+        cutoff = current - STATE_RETENTION_SECONDS
+        sessions = {
+            key: value
+            for key, value in sessions.items()
+            if isinstance(value, (int, float)) and float(value) >= cutoff
+        }
+        sessions[session_id] = current
+        _write_json(state_path, {"sessions": sessions})
+        lock.commit()
+        return True
+    finally:
+        lock.close()

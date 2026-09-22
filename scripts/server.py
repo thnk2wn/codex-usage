@@ -53,8 +53,8 @@ _CARD_REPORT_CACHE_TTL_SECONDS = 5 * 60
 _LIMIT_CACHE: tuple[float, dict[str, Any] | None] | None = None
 _LIMIT_CACHE_LOCK = threading.Lock()
 _LIMIT_CACHE_TTL_SECONDS = 10
-LIVE_REFRESH_INTERVAL_MS = 3_000
-LIVE_REFRESH_SECONDS = 2 * 60
+LIVE_REFRESH_INTERVAL_MS = 15_000
+LIVE_REFRESH_SECONDS = 20 * 60
 
 
 def _codex_home() -> Path:
@@ -800,7 +800,7 @@ def _tool_descriptor(
 TOOLS = [
     _tool_descriptor(
         "show_usage_card",
-        "Render a compact native usage card for this Codex conversation with expandable cross-task details.",
+        "Render the inline Codex Usage card. Use this tool for every automatic card request and for on-demand visual usage.",
         {
             "thread_id": {
                 "type": "string",
@@ -809,7 +809,7 @@ TOOLS = [
             "live": {
                 "type": "boolean",
                 "default": True,
-                "description": "Refresh the card briefly while the current turn is active.",
+                "description": "Refresh the card while work continues, for up to 20 minutes.",
             },
             "automatic": {
                 "type": "boolean",
@@ -818,7 +818,7 @@ TOOLS = [
             },
         },
         meta={
-            "ui": {"resourceUri": CARD_RESOURCE_URI},
+            "ui": {"resourceUri": CARD_RESOURCE_URI, "visibility": ["model", "app"]},
             "openai/outputTemplate": CARD_RESOURCE_URI,
             "openai/toolInvocation/invoking": "Reading local usage…",
             "openai/toolInvocation/invoked": "Usage ready",
@@ -891,13 +891,14 @@ TOOLS = [
     ),
     _tool_descriptor(
         "current_conversation_usage",
-        "Show raw local token usage for the current Codex conversation and its subagents.",
+        "Legacy text-only current usage result. The inline card uses show_usage_card.",
         {
             "thread_id": {
                 "type": "string",
                 "description": "The current Codex task/thread ID from the task context.",
             }
         },
+        meta={"ui": {"visibility": ["app"]}},
         required=["thread_id"],
     ),
     _tool_descriptor(

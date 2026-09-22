@@ -13,9 +13,9 @@ Call `show_usage_card` by default when the user asks to show, display, view, or 
 
 Mobile Remote currently preserves the tool result but may not render the MCP App iframe. The text fallback is intentionally one line and tells the user to say `usage details`. When the user asks for those details after a text-only result, call `usage_details` with the same `thread_id` and summarize its structured result in text: context input/window, latest output, cached input, subagents, account usage/reset, alerts, and top tasks. Use `usage_details` rather than `show_usage_card` for this, because a card's render data is delivered to the component only and is not readable in the tool result. Do not claim that the one-line mobile result is clickable or expandable.
 
-The plugin's trusted `UserPromptSubmit` hook may add developer context saying a Codex Usage card is due. That message is deliberately terse, because it is re-read on every later turn; the behaviour is defined here. When it appears, call `show_usage_card` exactly once before other work with the supplied `thread_id`, `live: true`, and `automatic: true`, then continue the user's request without narrating the card call or adding a usage summary of your own. If the tool is unavailable, continue without retrying it. The hook rate-limits this per task (15 minutes by default), so do not second-guess or duplicate it. If the hook does not say a card is due, do not render one after an unrelated reply.
+The plugin's trusted `UserPromptSubmit` and `PostToolUse` hooks may add developer context saying a Codex Usage card is due. That message is deliberately terse, because it is re-read on every later turn; the behaviour is defined here. When it appears, call `show_usage_card` exactly once before other work with the supplied `thread_id`, `live: true`, and `automatic: true`, then continue the user's request without narrating the card call or adding a usage summary of your own. The named `show_usage_card` tool is the only tool that renders the visual inline card; `current_conversation_usage` returns plain text and JSON. If the tool is unavailable, continue without retrying it. The hooks share a per-task 15-minute default rate limit, so do not second-guess or duplicate them. If neither hook says a card is due, do not render one after an unrelated reply.
 
-Each newly rendered card returns its compact current-task header first, then loads the heavier cross-task breakdown inside the card without holding up the agent. It refreshes its own values for up to two minutes while the turn is active, then freezes as a historical snapshot. It never rewrites an older card. The expanded card can set the automatic-card cadence, applied independently per task, to every turn, 30 seconds, 1 minute, 5 minutes, 15 minutes, or off. Do not claim background popup alerts when no user turn is running.
+Each newly rendered card returns its compact current-task header first, then loads the heavier cross-task breakdown inside the card without holding up the agent. While visible, it refreshes its own values every 15 seconds for up to 20 minutes. A subsequent card is a new conversation item; it never rewrites an older card. The expanded card can set the automatic-card cadence, applied independently per task, to every turn, 30 seconds, 1 minute, 5 minutes, 15 minutes, or off. Do not claim background popup alerts when no user turn is running.
 
 ## Optional dashboard
 
@@ -29,9 +29,9 @@ The localhost panel refreshes automatically and combines this conversation with 
 
 ## Current conversation
 
-Call `current_conversation_usage` when the user asks for a concise answer about how much this conversation, session, task, or thread has used without asking to open the panel. Always pass the current Codex task ID from the task context as `thread_id`. Pass a different explicit thread ID only when the user names a different task and its ID is already known.
+Call `show_usage_card` when the user asks how much this conversation, session, task, or thread has used without asking to open the panel. Always pass the current Codex task ID from the task context as `thread_id`. Pass a different explicit thread ID only when the user names a different task and its ID is already known. The compact card result gives a one-line answer and expandable detail.
 
-Briefly summarize the result, distinguishing:
+If the user explicitly wants a text breakdown instead of the card, call `usage_details` and briefly summarize:
 
 - the conversation's own raw tokens;
 - child/subagent raw tokens;
