@@ -13,6 +13,15 @@ import server  # noqa: E402
 
 
 class UsageCardTest(unittest.TestCase):
+    def test_component_only_tools_are_hidden_from_the_model(self) -> None:
+        descriptors = {tool["name"]: tool for tool in server.TOOLS}
+
+        for name in ("refresh_usage_card", "get_usage_preferences"):
+            self.assertEqual(
+                descriptors[name]["_meta"]["ui"]["visibility"],
+                ["app"],
+            )
+
     def test_initial_card_skips_dashboard_then_refresh_loads_it(self) -> None:
         current = {
             "thread": {"id": "task-1", "name": "Test task"},

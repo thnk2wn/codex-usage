@@ -152,13 +152,13 @@ class CardResourceTest(unittest.TestCase):
         )
         self.assertNotIn(server.CARD_RESOURCE_URI, server.LEGACY_CARD_RESOURCE_URIS)
 
-    def test_manifest_version_is_the_cachebuster(self) -> None:
+    def test_manifest_base_version_matches_the_server(self) -> None:
         manifest = json.loads(
             (Path(server.PLUGIN_ROOT) / ".codex-plugin" / "plugin.json").read_text(
                 encoding="utf-8"
             )
         )
-        self.assertEqual(manifest["version"], server.SERVER_VERSION)
+        self.assertEqual(manifest["version"].split("+", 1)[0], server.SERVER_VERSION)
         self.assertNotEqual(manifest["version"], "0.2.0")
 
     def test_card_announces_the_server_version(self) -> None:

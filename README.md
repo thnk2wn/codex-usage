@@ -77,7 +77,7 @@ See [OpenAI's plugin submission documentation](https://developers.openai.com/plu
 
 ## UI surfaces
 
-- Automatic cards are rate-limited to one per task every five minutes by default. A qualifying user prompt creates a **new** compact snapshot near that turn; it refreshes in place for up to two minutes while work continues, then freezes in conversation history. Older cards are never rewritten.
+- Automatic cards are rate-limited to one per task every 15 minutes by default. A qualifying user prompt creates a **new** compact snapshot near that turn; it refreshes in place for up to two minutes while work continues, then freezes in conversation history. Older cards are never rewritten.
 - The minimized header includes the snapshot time and remaining account capacity. It turns amber when 15% or less remains or current pace projects over the limit, and red when 10% or less remains. Clicking it expands clearly defined token metrics, a limit-window pace projection, a subdued compaction notice, the top five tasks, and a global automatic-card frequency control (every turn, 30 seconds, 1/5/15 minutes, or off). Open card instances synchronize that preference when the client permits it, and every historical card rechecks it when expanded.
 - `show_usage_card` can also render a card on demand. `refresh_usage_card` is used only by an already-rendered card, so live updates do not add more conversation items.
 - Mobile Remote falls back to a single-line status result when it does not render the MCP App iframe; say `usage details` for a text breakdown. That path uses `usage_details`, which returns the same report as model-readable data, because a card's own render payload is delivered to the component only.
@@ -91,7 +91,7 @@ The trusted prompt hook only decides whether a card is due and asks Codex to inv
 
 Once that header is rendered, the embedded card requests the heavier limit-window scan asynchronously. Expanding immediately may briefly show **Loading cross-task breakdown…** before the top-five task list arrives. That scan is cached for five minutes, while the current-task values can continue refreshing every few seconds for up to two minutes. This background hydration does not hold up the agent after the initial compact result has returned.
 
-The five-minute automatic-card cadence limits how often a new conversation item is added; it is separate from the short-lived refreshes inside an existing card. Change the cadence from any expanded card. The preference is shared globally, while the last-rendered timestamp is tracked per task.
+The 15-minute automatic-card cadence limits how often a new conversation item is added; it is separate from the short-lived refreshes inside an existing card. Change the cadence from any expanded card. The preference is shared globally, while the last-rendered timestamp is tracked per task.
 
 ## What the plugin itself costs
 

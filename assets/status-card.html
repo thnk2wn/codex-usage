@@ -340,7 +340,7 @@
           const detail = `${pct(pace.elapsedPercent)} of time elapsed · ${pct(limit.usedPercent)} used`;
           paceRow = `<div class="pace ${risk ? 'risk' : ''}" title="Projection uses the average aggregate usage rate since this account window began; it will change as your pace changes."><div><strong>${esc(headline)}</strong><span>${esc(detail)}</span></div><strong class="projection">${pct(pace.projectedPercent)} projected</strong></div>`;
         }
-        const interval = Number(data.preferences?.autoCardIntervalSeconds ?? 300);
+        const interval = Number(data.preferences?.autoCardIntervalSeconds ?? 900);
         const taskDetails = data.detailsLoaded === false
           ? '<div class="details-loading">Loading cross-task breakdown…</div>'
           : (taskRows || '<span class="note">No recorded activity.</span>');

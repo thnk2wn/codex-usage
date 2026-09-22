@@ -843,12 +843,14 @@ TOOLS = [
                 "description": "Continue live refreshes after the cross-task details load.",
             },
         },
+        meta={"ui": {"visibility": ["app"]}},
         required=["thread_id", "live_until_epoch_ms"],
     ),
     _tool_descriptor(
         "get_usage_preferences",
         "Read the current automatic-card interval shared by all Codex Usage cards.",
         {},
+        meta={"ui": {"visibility": ["app"]}},
     ),
     _tool_descriptor(
         "set_auto_card_interval",
