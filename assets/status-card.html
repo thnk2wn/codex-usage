@@ -207,7 +207,7 @@
         };
         request('tools/call', {
           name: 'refresh_usage_card',
-          arguments: { thread_id: threadId, include_details: false }
+          arguments: { thread_id: threadId, include_details: false, snapshot_id: ref.snapshotId }
         }).then(result => {
           const report = reportIn(result) || structured(result);
           if (!report) {
@@ -277,6 +277,7 @@
               detailsError = false;
               loadDetails();
             });
+            reportHeight();
           }
         } finally {
           detailsLoading = false;

@@ -59,6 +59,7 @@ function makeElement() {
 function boot(options) {
   const listeners = {};
   const sent = [];
+  const heights = [];
   const root = makeElement();
   const details = makeElement();
   const tasks = makeElement();
@@ -69,7 +70,8 @@ function boot(options) {
   };
   const openai = (options && options.noOpenai)
     ? undefined
-    : { toolOutput: undefined, notifyIntrinsicHeight() {}, setWidgetState() {} };
+    : { toolOutput: undefined, notifyIntrinsicHeight(height) { heights.push(height); }, setWidgetState() {} };
+  const body = { scrollHeight: 10, getBoundingClientRect: () => ({ height: 10 }) };
 
   const windowStub = {
     openai,
@@ -85,7 +87,7 @@ function boot(options) {
     window: windowStub,
     document: {
       getElementById: () => root,
-      body: { scrollHeight: 10, getBoundingClientRect: () => ({ height: 10 }) },
+      body,
       visibilityState: 'visible',
       querySelector: () => makeElement(),
       querySelectorAll: () => [],
@@ -112,7 +114,7 @@ function boot(options) {
 
   const fire = (type, detail) => (listeners[type] || []).forEach(fn => fn({ detail, source: windowStub.parent, data: detail }));
   const reply = (id, result) => fire('message', { jsonrpc: '2.0', id, result });
-  return { listeners, sent, root, details, tasks, openai, fire, reply, windowStub };
+  return { listeners, sent, root, details, tasks, body, heights, openai, fire, reply, windowStub };
 }
 
 function initialize(host) {
@@ -195,12 +197,13 @@ test('a reference with no metadata triggers hydration', async () => {
   const host = boot();
   await initialize(host);
   host.fire('openai:set_globals', {
-    globals: { toolOutput: { kind: 'usage_card_ref', threadId: 'task-1' } }
+    globals: { toolOutput: { kind: 'usage_card_ref', threadId: 'task-1', snapshotId: 'snapshot-1' } }
   });
   const call = host.sent.find(m => m.method === 'tools/call' && m.params?.name === 'refresh_usage_card');
   assert.ok(call, 'card should request its own data when metadata is absent');
   assert.strictEqual(call.params.arguments.thread_id, 'task-1');
   assert.strictEqual(call.params.arguments.include_details, false, 'fallback should only recover the compact header');
+  assert.strictEqual(call.params.arguments.snapshot_id, 'snapshot-1', 'fallback should recover the original snapshot');
 });
 
 test('a wrapped payload on the tool-result channel is recognised', async () => {
@@ -256,6 +259,22 @@ test('a live flag in an older report never starts timed refreshes', async () => 
   host.fire('openai:set_globals', { globals: { toolResponseMetadata: { [META_KEY]: oldLiveReport } } });
   await new Promise(resolve => setTimeout(resolve, 50));
   assert.strictEqual(host.sent.filter(m => m.params?.name === 'refresh_usage_card').length, 0);
+});
+
+test('details-load failure reports the error panel height to the host', async () => {
+  const host = boot();
+  await initialize(host);
+  host.fire('openai:set_globals', {
+    globals: { toolResponseMetadata: { [META_KEY]: report({ detailsLoaded: false }) } }
+  });
+  host.details.open = true;
+  host.details.events.toggle();
+  const call = host.sent.find(m => m.params?.name === 'refresh_usage_card');
+  assert.ok(call);
+  host.body.scrollHeight = 20;
+  host.fire('message', { jsonrpc: '2.0', id: call.id, error: { message: 'failed' } });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.ok(host.heights.includes(20), 'the host should receive the new error-panel height');
 });
 
 test('a reference delivered before init is replayed after init', async () => {

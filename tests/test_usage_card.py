@@ -67,7 +67,7 @@ class UsageCardTest(unittest.TestCase):
         }
 
         with (
-            patch.object(server, "current_conversation_usage", return_value=current),
+            patch.object(server, "current_conversation_usage", return_value=current) as current_read,
             patch.object(server, "_cached_usage_dashboard", return_value=dashboard) as scan,
             patch.object(
                 server,
@@ -90,7 +90,7 @@ class UsageCardTest(unittest.TestCase):
             reference = initial_result["structuredContent"]
             self.assertEqual(reference["kind"], "usage_card_ref")
             self.assertEqual(reference["threadId"], "task-1")
-            self.assertEqual(set(reference), {"kind", "threadId"})
+            self.assertEqual(set(reference), {"kind", "threadId", "snapshotId"})
             initial = initial_result["_meta"][server.CARD_REPORT_META_KEY]
 
             self.assertFalse(initial["detailsLoaded"])
@@ -106,11 +106,27 @@ class UsageCardTest(unittest.TestCase):
                     "arguments": {
                         "thread_id": "task-1",
                         "include_details": False,
+                        "snapshot_id": reference["snapshotId"],
                     },
                 },
             )["structuredContent"]
             self.assertFalse(recovered["detailsLoaded"])
+            self.assertEqual(recovered["generatedAt"], initial["generatedAt"])
+            current_read.assert_called_once()
             scan.assert_not_called()
+
+            with self.assertRaisesRegex(RuntimeError, "original card snapshot"):
+                server._handle(
+                    "tools/call",
+                    {
+                        "name": "refresh_usage_card",
+                        "arguments": {
+                            "thread_id": "task-1",
+                            "include_details": False,
+                            "snapshot_id": "missing",
+                        },
+                    },
+                )
 
             detailed = server._handle(
                 "tools/call",

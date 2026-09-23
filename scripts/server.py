@@ -8,6 +8,7 @@ import os
 import sqlite3
 import sys
 import threading
+import uuid
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -53,6 +54,8 @@ _CARD_REPORT_CACHE_TTL_SECONDS = 5 * 60
 _LIMIT_CACHE: tuple[float, dict[str, Any] | None] | None = None
 _LIMIT_CACHE_LOCK = threading.Lock()
 _LIMIT_CACHE_TTL_SECONDS = 10
+_CARD_SNAPSHOTS: dict[str, dict[str, Any]] = {}
+_CARD_SNAPSHOTS_LOCK = threading.Lock()
 
 
 def _codex_home() -> Path:
@@ -826,6 +829,10 @@ TOOLS = [
                 "default": True,
                 "description": "False only when recovering the compact header after missing component metadata.",
             },
+            "snapshot_id": {
+                "type": "string",
+                "description": "Optional original snapshot ID carried by a compact card reference.",
+            },
         },
         meta={"ui": {"visibility": ["app"]}},
         required=["thread_id"],
@@ -973,14 +980,18 @@ def _card_tool_result(report: dict[str, Any]) -> dict[str, Any]:
     `_meta` is delivered only to the component, so the card renders from the
     same data while the conversation carries just the summary line.
 
-    A tiny reference stays in `structuredContent` so the card can always
-    re-request its own data if a host does not deliver `_meta`.
+    A tiny reference stays in `structuredContent` so the card can recover the
+    original compact snapshot if a host does not deliver `_meta`.
     """
+    snapshot_id = uuid.uuid4().hex
+    with _CARD_SNAPSHOTS_LOCK:
+        _CARD_SNAPSHOTS[snapshot_id] = report
     return {
         "content": [{"type": "text", "text": _text_summary(report)}],
         "structuredContent": {
             "kind": "usage_card_ref",
             "threadId": (report.get("thread") or {}).get("id"),
+            "snapshotId": snapshot_id,
         },
         "_meta": {CARD_REPORT_META_KEY: report},
     }
@@ -1037,6 +1048,13 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
         if name == "show_usage_card":
             return _card_tool_result(usage_card(arguments, include_details=False))
         if name == "refresh_usage_card":
+            snapshot_id = arguments.get("snapshot_id")
+            if snapshot_id and not arguments.get("include_details", True):
+                with _CARD_SNAPSHOTS_LOCK:
+                    snapshot = _CARD_SNAPSHOTS.get(snapshot_id)
+                if snapshot and (snapshot.get("thread") or {}).get("id") == arguments.get("thread_id"):
+                    return _tool_result(snapshot)
+                raise RuntimeError("The original card snapshot is no longer available.")
             return _tool_result(
                 usage_card(
                     {"thread_id": arguments.get("thread_id")},

@@ -45,10 +45,11 @@ class CardToolResultTest(unittest.TestCase):
         self.assertEqual(result["structuredContent"]["kind"], "usage_card_ref")
         self.assertEqual(result["structuredContent"]["threadId"], "task-1")
 
-    def test_reference_only_carries_the_thread_needed_for_header_recovery(self) -> None:
+    def test_reference_carries_the_original_snapshot_id_for_header_recovery(self) -> None:
         report = _card_report()
         reference = server._card_tool_result(report)["structuredContent"]
-        self.assertEqual(set(reference), {"kind", "threadId"})
+        self.assertEqual(set(reference), {"kind", "threadId", "snapshotId"})
+        self.assertTrue(reference["snapshotId"])
 
     def test_reference_survives_a_missing_thread(self) -> None:
         report = _card_report()
