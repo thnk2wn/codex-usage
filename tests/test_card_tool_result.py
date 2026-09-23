@@ -45,26 +45,10 @@ class CardToolResultTest(unittest.TestCase):
         self.assertEqual(result["structuredContent"]["kind"], "usage_card_ref")
         self.assertEqual(result["structuredContent"]["threadId"], "task-1")
 
-    def test_reference_carries_the_live_setting(self) -> None:
+    def test_reference_only_carries_the_thread_needed_for_header_recovery(self) -> None:
         report = _card_report()
-        report["liveRefresh"] = {"enabled": False, "untilEpochMs": 0}
         reference = server._card_tool_result(report)["structuredContent"]
-        self.assertFalse(reference["live"])
-        self.assertEqual(reference["liveUntilEpochMs"], 0)
-
-    def test_reference_reports_an_enabled_live_window(self) -> None:
-        report = _card_report()
-        report["liveRefresh"] = {"enabled": True, "untilEpochMs": 1_700_000_000_000}
-        reference = server._card_tool_result(report)["structuredContent"]
-        self.assertTrue(reference["live"])
-        self.assertEqual(reference["liveUntilEpochMs"], 1_700_000_000_000)
-
-    def test_reference_survives_a_missing_live_block(self) -> None:
-        report = _card_report()
-        report.pop("liveRefresh", None)
-        reference = server._card_tool_result(report)["structuredContent"]
-        self.assertFalse(reference["live"])
-        self.assertEqual(reference["liveUntilEpochMs"], 0)
+        self.assertEqual(set(reference), {"kind", "threadId"})
 
     def test_reference_survives_a_missing_thread(self) -> None:
         report = _card_report()
@@ -105,9 +89,8 @@ class CardToolResultTest(unittest.TestCase):
         )
         self.assertEqual(len(self._visible(large)), len(self._visible(small)))
 
-    def test_refresh_path_still_returns_structured_content(self) -> None:
-        # The card requests refreshes itself; those never enter the transcript,
-        # so they keep the full structured payload the widget already reads.
+    def test_component_detail_path_still_returns_structured_content(self) -> None:
+        # The one-time expansion request stays outside the transcript.
         result = server._tool_result(_card_report())
         self.assertEqual(result["structuredContent"]["kind"], "usage_card")
 

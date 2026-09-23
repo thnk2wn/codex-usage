@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover - Python 3.8 fallback
 
 
 SERVER_NAME = "codex-usage"
-SERVER_VERSION = "0.3.0"
+SERVER_VERSION = "0.3.1"
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 DASHBOARD_PATH = PLUGIN_ROOT / "assets" / "dashboard.html"
 CARD_PATH = PLUGIN_ROOT / "assets" / "status-card.html"
@@ -53,8 +53,6 @@ _CARD_REPORT_CACHE_TTL_SECONDS = 5 * 60
 _LIMIT_CACHE: tuple[float, dict[str, Any] | None] | None = None
 _LIMIT_CACHE_LOCK = threading.Lock()
 _LIMIT_CACHE_TTL_SECONDS = 10
-LIVE_REFRESH_INTERVAL_MS = 15_000
-LIVE_REFRESH_SECONDS = 20 * 60
 
 
 def _codex_home() -> Path:
@@ -561,15 +559,6 @@ def usage_card(
         else None
     )
     now = datetime.now(timezone.utc)
-    live_requested = bool(arguments.get("live", True))
-    requested_deadline = arguments.get("live_until_epoch_ms")
-    if isinstance(requested_deadline, (int, float)):
-        live_until_epoch_ms = int(requested_deadline)
-    else:
-        live_until_epoch_ms = int(
-            (now + timedelta(seconds=LIVE_REFRESH_SECONDS)).timestamp() * 1000
-        )
-    live_enabled = live_requested and live_until_epoch_ms > int(now.timestamp() * 1000)
     context_percent = current["context"]["usedPercent"]
     context_level = "normal"
     if context_percent is not None and context_percent >= 90:
@@ -632,9 +621,9 @@ def usage_card(
         "alerts": alerts,
         "preferences": get_preferences(),
         "liveRefresh": {
-            "enabled": live_enabled,
-            "intervalMs": LIVE_REFRESH_INTERVAL_MS,
-            "untilEpochMs": live_until_epoch_ms,
+            "enabled": False,
+            "intervalMs": 0,
+            "untilEpochMs": 0,
         },
         "notice": "Raw local token counters are not an authoritative quota ledger.",
     }
@@ -808,8 +797,7 @@ TOOLS = [
             },
             "live": {
                 "type": "boolean",
-                "default": True,
-                "description": "Refresh the card while work continues, for up to 20 minutes.",
+                "description": "Ignored for compatibility with existing automatic-card hooks; cards stay fixed.",
             },
             "automatic": {
                 "type": "boolean",
@@ -827,24 +815,20 @@ TOOLS = [
     ),
     _tool_descriptor(
         "refresh_usage_card",
-        "Refresh the values inside an already-rendered Codex Usage card without creating another inline card.",
+        "Load a card's full details once when expanded, or recover its compact header when component metadata is unavailable.",
         {
             "thread_id": {
                 "type": "string",
                 "description": "The Codex task/thread ID displayed by the existing card.",
             },
-            "live_until_epoch_ms": {
-                "type": "number",
-                "description": "The original card's fixed live-refresh deadline.",
-            },
-            "live": {
+            "include_details": {
                 "type": "boolean",
                 "default": True,
-                "description": "Continue live refreshes after the cross-task details load.",
+                "description": "False only when recovering the compact header after missing component metadata.",
             },
         },
         meta={"ui": {"visibility": ["app"]}},
-        required=["thread_id", "live_until_epoch_ms"],
+        required=["thread_id"],
     ),
     _tool_descriptor(
         "get_usage_preferences",
@@ -997,12 +981,6 @@ def _card_tool_result(report: dict[str, Any]) -> dict[str, Any]:
         "structuredContent": {
             "kind": "usage_card_ref",
             "threadId": (report.get("thread") or {}).get("id"),
-            # Carry the caller's live setting so the fallback cannot turn a
-            # live:false call into a polling one.
-            "live": bool((report.get("liveRefresh") or {}).get("enabled")),
-            "liveUntilEpochMs": int(
-                (report.get("liveRefresh") or {}).get("untilEpochMs") or 0
-            ),
         },
         "_meta": {CARD_REPORT_META_KEY: report},
     }
@@ -1061,14 +1039,8 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
         if name == "refresh_usage_card":
             return _tool_result(
                 usage_card(
-                    {
-                        "thread_id": arguments.get("thread_id"),
-                        "live": bool(arguments.get("live", True)),
-                        "live_until_epoch_ms": arguments.get(
-                            "live_until_epoch_ms"
-                        ),
-                    },
-                    include_details=True,
+                    {"thread_id": arguments.get("thread_id")},
+                    include_details=bool(arguments.get("include_details", True)),
                 )
             )
         if name == "get_usage_preferences":
