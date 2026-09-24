@@ -1,7 +1,7 @@
 {
   "name": "codex-usage",
-  "version": "0.3.0",
-  "description": "Live, rate-limited Codex usage snapshots and cross-task insights.",
+  "version": "0.3.1",
+  "description": "Rate-limited Codex usage snapshots and cross-task insights.",
   "author": {
     "name": "Geoff Hudik",
     "url": "https://github.com/thnk2wn"
@@ -19,8 +19,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Codex Usage",
-    "shortDescription": "Live usage snapshots, quota pace, and top tasks.",
-    "longDescription": "Private, local usage snapshots for Codex. Rate-limited cards appear near active turns, refresh briefly while work continues, then remain frozen in conversation history. Expand one for context pressure, recent token processing, cache reuse, child-task usage, account reset timing, projected pace, and the tasks responsible for the most activity. Data stays on your Mac.",
+    "shortDescription": "Usage snapshots, quota pace, and top tasks.",
+    "longDescription": "Private, local usage snapshots for Codex. Rate-limited cards appear near active turns and retain their original header values. Expand one to load its cross-task details once, including context pressure, recent token processing, cache reuse, child-task usage, account reset timing, projected pace, and the tasks responsible for the most activity. Data stays on your Mac.",
     "developerName": "Geoff Hudik",
     "category": "Productivity",
     "capabilities": [

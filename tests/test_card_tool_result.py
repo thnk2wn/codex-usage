@@ -40,37 +40,14 @@ class CardToolResultTest(unittest.TestCase):
         self.assertNotIn("combinedTokens", visible)
         self.assertNotIn("topTasks", visible)
 
-    def test_reference_carries_the_thread_id_for_rehydration(self) -> None:
+    def test_mobile_fallback_has_no_json_panel(self) -> None:
         result = server._card_tool_result(_card_report())
-        self.assertEqual(result["structuredContent"]["kind"], "usage_card_ref")
-        self.assertEqual(result["structuredContent"]["threadId"], "task-1")
-
-    def test_reference_carries_the_live_setting(self) -> None:
-        report = _card_report()
-        report["liveRefresh"] = {"enabled": False, "untilEpochMs": 0}
-        reference = server._card_tool_result(report)["structuredContent"]
-        self.assertFalse(reference["live"])
-        self.assertEqual(reference["liveUntilEpochMs"], 0)
-
-    def test_reference_reports_an_enabled_live_window(self) -> None:
-        report = _card_report()
-        report["liveRefresh"] = {"enabled": True, "untilEpochMs": 1_700_000_000_000}
-        reference = server._card_tool_result(report)["structuredContent"]
-        self.assertTrue(reference["live"])
-        self.assertEqual(reference["liveUntilEpochMs"], 1_700_000_000_000)
-
-    def test_reference_survives_a_missing_live_block(self) -> None:
-        report = _card_report()
-        report.pop("liveRefresh", None)
-        reference = server._card_tool_result(report)["structuredContent"]
-        self.assertFalse(reference["live"])
-        self.assertEqual(reference["liveUntilEpochMs"], 0)
-
-    def test_reference_survives_a_missing_thread(self) -> None:
-        report = _card_report()
-        report.pop("thread")
-        result = server._card_tool_result(report)
-        self.assertIsNone(result["structuredContent"]["threadId"])
+        self.assertEqual(set(result), {"content", "_meta"})
+        self.assertEqual(len(result["content"]), 1)
+        self.assertEqual(result["content"][0]["type"], "text")
+        self.assertTrue(
+            all(len(line) <= 36 for line in result["content"][0]["text"].splitlines())
+        )
 
     def test_summary_line_is_still_present_for_the_model(self) -> None:
         result = server._card_tool_result(_card_report())
@@ -105,9 +82,8 @@ class CardToolResultTest(unittest.TestCase):
         )
         self.assertEqual(len(self._visible(large)), len(self._visible(small)))
 
-    def test_refresh_path_still_returns_structured_content(self) -> None:
-        # The card requests refreshes itself; those never enter the transcript,
-        # so they keep the full structured payload the widget already reads.
+    def test_component_detail_path_still_returns_structured_content(self) -> None:
+        # The one-time expansion request stays outside the transcript.
         result = server._tool_result(_card_report())
         self.assertEqual(result["structuredContent"]["kind"], "usage_card")
 

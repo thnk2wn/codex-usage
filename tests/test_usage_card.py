@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 import unittest
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,7 +30,7 @@ class UsageCardTest(unittest.TestCase):
             ["model", "app"],
         )
 
-    def test_initial_card_skips_dashboard_then_refresh_loads_it(self) -> None:
+    def test_compact_card_skips_dashboard_until_details_are_requested(self) -> None:
         current = {
             "thread": {"id": "task-1", "name": "Test task"},
             "ownUsage": {"totalTokens": 1000, "cachedPercent": 80},
@@ -68,7 +67,7 @@ class UsageCardTest(unittest.TestCase):
         }
 
         with (
-            patch.object(server, "current_conversation_usage", return_value=current),
+            patch.object(server, "current_conversation_usage", return_value=current) as current_read,
             patch.object(server, "_cached_usage_dashboard", return_value=dashboard) as scan,
             patch.object(
                 server,
@@ -86,44 +85,48 @@ class UsageCardTest(unittest.TestCase):
                     "arguments": {"thread_id": "task-1", "live": True},
                 },
             )
-            # The card renders from component-only _meta; the transcript sees
-            # only a summary line and a reference back to this thread.
-            reference = initial_result["structuredContent"]
-            self.assertEqual(reference["kind"], "usage_card_ref")
-            self.assertEqual(reference["threadId"], "task-1")
-            # The reference carries the caller's live setting so the fallback
-            # cannot silently start polling; the deadline is a moving value.
-            self.assertTrue(reference["live"])
-            self.assertIn("liveUntilEpochMs", reference)
+            # The card renders from component-only _meta; mobile sees just text.
+            self.assertNotIn("structuredContent", initial_result)
             initial = initial_result["_meta"][server.CARD_REPORT_META_KEY]
 
             self.assertFalse(initial["detailsLoaded"])
             self.assertIsNone(initial["windowUsage"])
             self.assertEqual(initial["topTasks"], [])
-            generated_ms = datetime.fromisoformat(initial["generatedAt"]).timestamp() * 1000
-            self.assertAlmostEqual(
-                initial["liveRefresh"]["untilEpochMs"] - generated_ms,
-                20 * 60 * 1000,
-                delta=1,
-            )
-            self.assertEqual(initial["liveRefresh"]["intervalMs"], 15_000)
+            self.assertFalse(initial["liveRefresh"]["enabled"])
             scan.assert_not_called()
 
-            refreshed = server._handle(
+            old_request_args = ({}, {"snapshot_id": "legacy-snapshot"}, {"from_tool_input": True})
+            for extra in old_request_args:
+                with self.assertRaisesRegex(RuntimeError, "original card snapshot"):
+                    server._handle(
+                        "tools/call",
+                        {
+                            "name": "refresh_usage_card",
+                            "arguments": {
+                                "thread_id": "task-1",
+                                "include_details": False,
+                                **extra,
+                            },
+                        },
+                    )
+            self.assertEqual(current_read.call_count, 1)
+            scan.assert_not_called()
+
+            detailed = server._handle(
                 "tools/call",
                 {
                     "name": "refresh_usage_card",
                     "arguments": {
                         "thread_id": "task-1",
-                        "live_until_epoch_ms": 9_999_999_999_999,
-                        "live": True,
+                        "include_details": True,
                     },
                 },
             )["structuredContent"]
 
-            self.assertTrue(refreshed["detailsLoaded"])
-            self.assertEqual(refreshed["windowUsage"], dashboard["totals"])
-            self.assertEqual(refreshed["topTasks"][0]["name"], "Test task")
+            self.assertTrue(detailed["detailsLoaded"])
+            self.assertEqual(detailed["windowUsage"], dashboard["totals"])
+            self.assertEqual(detailed["topTasks"][0]["name"], "Test task")
+            self.assertFalse(detailed["liveRefresh"]["enabled"])
             scan.assert_called_once_with("current_window", False, 300)
 
 

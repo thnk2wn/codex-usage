@@ -97,9 +97,8 @@
       let reportedHeight = 0;
       let initialized = false;
       let latestData = null;
-      let refreshTimer = null;
-      let hydrating = false;
-      let hydrateAttempts = 0;
+      let detailsLoading = false;
+      let detailsError = false;
       let deferred = null;
       let preferenceChannel = null;
       try {
@@ -112,13 +111,14 @@
       const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[char]));
       const when = epoch => epoch ? new Intl.DateTimeFormat(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }).format(new Date(epoch * 1000)) : '—';
       const clock = iso => iso ? new Intl.DateTimeFormat(undefined, { hour:'numeric', minute:'2-digit' }).format(new Date(iso)) : '—';
+      const dateTime = iso => iso ? new Intl.DateTimeFormat(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }).format(new Date(iso)) : '—';
       const metric = (label, value, help) => `<div class="metric" title="${esc(help)}"><span>${esc(label)}<i class="info" aria-label="${esc(help)}">i</i></span><strong>${esc(value)}</strong></div>`;
       const structured = result => result?.structuredContent || result?.result?.structuredContent || result?.toolResult?.structuredContent;
       const META_KEY = 'codexUsage/report';
       // The card's render data arrives as component-only _meta, a first-paint
       // optimisation so the model's context never carries it. If a host does not
-      // deliver it, the tool result still holds a reference and the card fetches
-      // its own data through refresh_usage_card (see hydrate).
+      // deliver it, the original snapshot cannot safely be reconstructed from
+      // current usage. Older tool results may hold a reference.
       //
       // Hosts expose the metadata under different global names and may hand over
       // the whole tool result (mcp_tool_result, call_tool_result, ...) with the
@@ -126,7 +126,7 @@
       // before flat aliases. None of these helpers ever fall back to the
       // persistent window.openai globals on their own: those still hold the
       // ORIGINAL snapshot, and an event about something unrelated must not be
-      // able to restore it over refreshed data. Only the bootstrap reads pass
+      // able to restore it over expanded data. Only the bootstrap reads pass
       // window.openai in explicitly.
       const ENVELOPE_KEYS = ['mcp_tool_result', 'call_tool_result', 'toolResult', 'tool_result', 'result'];
       const metaCandidates = source => {
@@ -156,10 +156,15 @@
         }
         return null;
       };
-      // One rule for what a source contributes: its _meta report, else its
-      // toolOutput (a full report or a usage_card_ref). Used for startup and
-      // live updates alike so the two cannot drift.
-      const cardFrom = source => reportIn(source) || source?.toolOutput;
+      // The initial card uses hidden metadata. If a host omits it, tool input
+      // tells us a card was requested but cannot reconstruct its original data.
+      // Text-only mobile output is not card data and must not mask tool input.
+      const cardFrom = source => {
+        const output = source?.toolOutput;
+        return reportIn(source) ||
+          (output?.kind === 'usage_card' || output?.kind === 'usage_card_ref' ? output : null) ||
+          (source?.toolInput?.thread_id ? { kind: 'usage_card_unavailable' } : null);
+      };
       const notify = (method, params = {}) => {
         window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
       };
@@ -168,64 +173,6 @@
         const response = new Promise((resolve, reject) => pendingRequests.set(id, { resolve, reject }));
         window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
         return response;
-      };
-      // Fallback for hosts that do not deliver component metadata. It only ever
-      // runs while nothing is rendered: once a card is on screen it is never
-      // replaced by this path, so a re-delivered reference cannot destroy a good
-      // card or un-freeze a historical snapshot. Transport failures retry with
-      // bounded backoff, then offer an explicit Retry. A render error is not a
-      // transport error and is never retried automatically.
-      const HYDRATE_ATTEMPT_LIMIT = 4;
-      const hydrateFailed = ref => {
-        if (latestData) return;
-        root.innerHTML = `<div class="loading">Could not read local Codex usage. <button type="button" id="hydrate-retry">Retry</button></div>`;
-        const button = root.querySelector('#hydrate-retry');
-        if (button) {
-          button.addEventListener('click', () => {
-            hydrateAttempts = 0;
-            root.innerHTML = '<div class="loading">Reading local Codex usage…</div>';
-            reportHeight();
-            hydrate(ref);
-          });
-        }
-        reportHeight();
-      };
-      const hydrate = ref => {
-        const threadId = ref && ref.threadId;
-        if (hydrating || !initialized || !threadId || latestData) return;
-        if (hydrateAttempts >= HYDRATE_ATTEMPT_LIMIT) {
-          hydrateFailed(ref);
-          return;
-        }
-        hydrating = true;
-        hydrateAttempts += 1;
-        const retry = () => {
-          hydrating = false;
-          const backoff = Math.min(8000, 500 * Math.pow(2, hydrateAttempts));
-          window.setTimeout(() => hydrate(ref), backoff);
-        };
-        request('tools/call', {
-          name: 'refresh_usage_card',
-          arguments: {
-            thread_id: threadId,
-            // Preserve the caller's live setting rather than assuming a new window.
-            live: Boolean(ref.live),
-            live_until_epoch_ms: Number(ref.liveUntilEpochMs || 0)
-          }
-        }).then(result => {
-          const report = reportIn(result) || structured(result);
-          if (!report) {
-            retry();
-            return;
-          }
-          hydrating = false;
-          hydrateAttempts = 0;
-          try {
-            render(report);
-          } catch (_error) {
-            hydrateFailed(ref);
-          }
-        }, retry);
       };
       const reportHeight = () => {
         window.requestAnimationFrame(() => {
@@ -247,61 +194,63 @@
           const result = await request('tools/call', { name: 'get_usage_preferences', arguments: {} });
           applyPreferences(structured(result));
         } catch (_error) {
-          // A historical usage snapshot remains useful if its live setting cannot load.
+          // A historical usage snapshot remains useful if its current preference cannot load.
         }
       };
       preferenceChannel?.addEventListener('message', event => applyPreferences(event.data));
-      const scheduleRefresh = data => {
-        if (refreshTimer) window.clearTimeout(refreshTimer);
-        refreshTimer = null;
-        const live = data?.liveRefresh || {};
-        const deadline = Number(live.untilEpochMs || 0);
-        const needsDetails = data?.detailsLoaded === false;
-        if (!initialized || !data?.thread?.id) return;
-        if (!needsDetails && (!live.enabled || deadline <= Date.now())) return;
-        const interval = Math.max(1000, Number(live.intervalMs || 3000));
-        const delay = needsDetails
-          ? (document.visibilityState === 'hidden' ? 1000 : 0)
-          : Math.min(interval, Math.max(0, deadline - Date.now()));
-        refreshTimer = window.setTimeout(async () => {
-          if (document.visibilityState === 'hidden') {
-            scheduleRefresh(data);
-            return;
+      const loadDetails = async () => {
+        if (!initialized || !latestData?.thread?.id || latestData.detailsLoaded || detailsLoading || detailsError) return;
+        detailsLoading = true;
+        try {
+          const result = await request('tools/call', {
+            name: 'refresh_usage_card',
+            arguments: { thread_id: latestData.thread.id, include_details: true }
+          });
+          const details = structured(result);
+          if (!details || details.kind !== 'usage_card' || details.thread?.id !== latestData.thread.id || !details.detailsLoaded) {
+            throw new Error('Incomplete usage details');
           }
-          try {
-            const result = await request('tools/call', {
-              name: 'refresh_usage_card',
-              arguments: {
-                thread_id: data.thread.id,
-                live_until_epoch_ms: deadline,
-                live: Boolean(live.enabled)
-              }
+          // Keep the card's original header and task metrics. Only the costly
+          // cross-task section is loaded at expansion time.
+          render({
+            ...latestData,
+            detailsLoaded: true,
+            detailsLoadedAt: details.generatedAt,
+            windowUsage: details.windowUsage,
+            topTasks: details.topTasks
+          }, true);
+        } catch (_error) {
+          detailsError = true;
+          const tasks = root.querySelector('.tasks');
+          if (tasks) {
+            tasks.innerHTML = '<span class="details-loading">Could not load details. <button type="button" id="details-retry">Retry</button></span>';
+            root.querySelector('#details-retry')?.addEventListener('click', () => {
+              detailsError = false;
+              loadDetails();
             });
-            render(structured(result));
-          } catch (_error) {
-            refreshTimer = null;
+            reportHeight();
           }
-        }, delay);
+        } finally {
+          detailsLoading = false;
+        }
       };
-      function render(data) {
+      function render(data, detailsResponse = false) {
         if (!data) return;
-        // A bare reference means the host did not deliver _meta: fetch the data.
-        // Before ui/initialize resolves the bridge cannot be used, so keep the
-        // reference and replay it once initialised.
-        if (data.kind === 'usage_card_ref') {
+        // Missing metadata cannot be reconstructed from current usage. A later
+        // delivery of the original metadata may still replace this error.
+        if (data.kind === 'usage_card_ref' || data.kind === 'usage_card_unavailable') {
+          if (latestData) return;
           if (!initialized) deferred = data;
-          else hydrate(data);
+          else {
+            root.innerHTML = '<div class="loading">Original card snapshot unavailable.</div>';
+            reportHeight();
+          }
           return;
         }
         if (data.kind !== 'usage_card') return;
-        // Never let an older snapshot of the same thread overwrite a newer one.
-        // This holds regardless of which channel delivered it, so it does not
-        // depend on hosts sending delta-only updates.
-        if (latestData && latestData.thread?.id === data.thread?.id
-            && data.generatedAt && latestData.generatedAt
-            && new Date(data.generatedAt) < new Date(latestData.generatedAt)) {
-          return;
-        }
+        // Host re-delivery must never change an existing card. The one allowed
+        // update is our own first expansion, which adds the cross-task details.
+        if (latestData && !detailsResponse) return;
         latestData = data;
         const existing = root.querySelector(':scope > details');
         const expanded = existing ? existing.open : Boolean(window.openai?.widgetState?.expanded);
@@ -350,7 +299,7 @@
               <span class="mark">CU</span>
               <span class="line"><span class="title">Codex usage</span><span class="status">Context ${pct(context.usedPercent)} · Task ${compact(data.combinedTokens)} raw · <strong class="account-status" title="${esc(accountHelp)}">${esc(account)}</strong></span></span>
               <span class="chevron" aria-hidden="true">⌄</span>
-              <span class="snapshot" title="Snapshot time. This card refreshes briefly, then freezes.">${esc(clock(data.generatedAt))}</span>
+              <span class="snapshot" title="Card created ${esc(dateTime(data.generatedAt))}. Usage values in this header stay fixed.">Created ${esc(clock(data.generatedAt))}</span>
             </summary>
             <section class="detail">
               <p class="task" title="${esc(data.thread?.name)}">${esc(data.thread?.name || 'Current conversation')}</p>
@@ -369,9 +318,10 @@
               ${alerts}
               <h3>Top 5 tasks this limit window · click a row for composition</h3>
               <div class="tasks">${taskDetails}</div>
+              <p class="note">Card created ${esc(dateTime(data.generatedAt))}${data.detailsLoadedAt ? ` · Cross-task details loaded ${esc(dateTime(data.detailsLoadedAt))}` : ''}. Task metrics are from card creation.</p>
               <p class="note">Raw local token counters are attribution clues, not an authoritative quota ledger. Cached input, model choice, reasoning, and internal work may be weighted differently.</p>
-              <div class="settings" title="Controls the minimum time between new automatic cards in each task. Existing cards remain historical snapshots.">
-                <label for="auto-card-interval">Automatic cards</label>
+              <div class="settings" title="Minimum gap between new automatic cards in each task. A new card appears on the next prompt or tool completion after that gap.">
+                <label for="auto-card-interval">New cards (minimum gap)</label>
                 <select id="auto-card-interval">
                   <option value="0" ${interval === 0 ? 'selected' : ''}>Every turn</option>
                   <option value="30" ${interval === 30 ? 'selected' : ''}>30 seconds</option>
@@ -387,7 +337,10 @@
         const details = root.querySelector('details');
         details.addEventListener('toggle', () => {
           window.openai?.setWidgetState?.({ expanded: details.open });
-          if (details.open) refreshPreferences();
+          if (details.open) {
+            refreshPreferences();
+            loadDetails();
+          }
           reportHeight();
         });
         const intervalSelect = root.querySelector('#auto-card-interval');
@@ -411,7 +364,7 @@
           }
         });
         reportHeight();
-        scheduleRefresh(data);
+        if (expanded) loadDetails();
       }
 
       window.addEventListener('openai:set_globals', event => {
@@ -435,20 +388,24 @@
           const params = message.params || {};
           render(reportIn(params) || structured(params));
         }
+        if (message.method === 'ui/notifications/tool-input') {
+          const params = message.params || {};
+          render(cardFrom({ toolInput: params.arguments || params }));
+        }
       }, { passive: true });
       render(cardFrom(window.openai));
       request('ui/initialize', {
-        appInfo: { name: 'codex-usage', version: '0.3.0' },
+        appInfo: { name: 'codex-usage', version: '0.3.1' },
         appCapabilities: { availableDisplayModes: ['inline'] },
         protocolVersion: '2025-11-21'
       }).then(() => {
         initialized = true;
         notify('ui/notifications/initialized');
-        // The pre-init render already built the card if data was available; the
-        // only thing it could not do was arm refreshes. Otherwise replay a
-        // reference seen before init, or read the persistent globals now.
-        if (latestData) scheduleRefresh(latestData);
-        else render(deferred || cardFrom(window.openai));
+        // A pre-init card may already be rendered; load details only if it was
+        // expanded, otherwise wait for the first expansion.
+        if (latestData) {
+          if (root.querySelector(':scope > details')?.open) loadDetails();
+        } else render(deferred || cardFrom(window.openai));
         deferred = null;
         reportHeight();
       }).catch(() => {
