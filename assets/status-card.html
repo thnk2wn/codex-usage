@@ -119,8 +119,8 @@
       const META_KEY = 'codexUsage/report';
       // The card's render data arrives as component-only _meta, a first-paint
       // optimisation so the model's context never carries it. If a host does not
-      // deliver it, the tool result still holds a reference and the card fetches
-      // its compact data through refresh_usage_card (see hydrate).
+      // deliver it, tool input can request compact data through
+      // refresh_usage_card (see hydrate). Older tool results may hold a reference.
       //
       // Hosts expose the metadata under different global names and may hand over
       // the whole tool result (mcp_tool_result, call_tool_result, ...) with the
@@ -444,7 +444,8 @@
           render(reportIn(params) || structured(params));
         }
         if (message.method === 'ui/notifications/tool-input') {
-          render(cardFrom({ toolInput: message.params }));
+          const params = message.params || {};
+          render(cardFrom({ toolInput: params.arguments || params }));
         }
       }, { passive: true });
       render(cardFrom(window.openai));

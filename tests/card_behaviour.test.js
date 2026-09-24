@@ -234,6 +234,33 @@ test('text-only tool output does not mask the tool input fallback', async () => 
   assert.strictEqual(calls[0].params.arguments.thread_id, 'task-1');
 });
 
+test('tool-input notification unwraps standard arguments before hydration', async () => {
+  const host = boot({ noOpenai: true });
+  await initialize(host);
+  host.fire('message', {
+    jsonrpc: '2.0',
+    method: 'ui/notifications/tool-input',
+    params: { arguments: { thread_id: 'task-1' } }
+  });
+  const calls = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
+  assert.strictEqual(calls.length, 1, 'standard notification should trigger compact hydration');
+  assert.strictEqual(calls[0].params.arguments.thread_id, 'task-1');
+  assert.strictEqual(calls[0].params.arguments.include_details, false);
+});
+
+test('tool-input notification retains direct arguments compatibility', async () => {
+  const host = boot({ noOpenai: true });
+  await initialize(host);
+  host.fire('message', {
+    jsonrpc: '2.0',
+    method: 'ui/notifications/tool-input',
+    params: { thread_id: 'task-1' }
+  });
+  const calls = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0].params.arguments.thread_id, 'task-1');
+});
+
 test('a wrapped payload on the tool-result channel is recognised', async () => {
   const host = boot();
   await initialize(host);
