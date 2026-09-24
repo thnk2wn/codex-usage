@@ -53,8 +53,6 @@ _CARD_REPORT_CACHE_TTL_SECONDS = 5 * 60
 _LIMIT_CACHE: tuple[float, dict[str, Any] | None] | None = None
 _LIMIT_CACHE_LOCK = threading.Lock()
 _LIMIT_CACHE_TTL_SECONDS = 10
-_CARD_SNAPSHOTS: dict[str, dict[str, Any]] = {}
-_CARD_SNAPSHOTS_LOCK = threading.Lock()
 
 
 def _codex_home() -> Path:
@@ -830,7 +828,7 @@ TOOLS = [
             },
             "snapshot_id": {
                 "type": "string",
-                "description": "Optional original snapshot ID carried by a compact card reference.",
+                "description": "Legacy snapshot ID; unavailable originals are never replaced with newer usage.",
             },
         },
         meta={"ui": {"visibility": ["app"]}},
@@ -1041,10 +1039,6 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
         if name == "refresh_usage_card":
             snapshot_id = arguments.get("snapshot_id")
             if snapshot_id and not arguments.get("include_details", True):
-                with _CARD_SNAPSHOTS_LOCK:
-                    snapshot = _CARD_SNAPSHOTS.get(snapshot_id)
-                if snapshot and (snapshot.get("thread") or {}).get("id") == arguments.get("thread_id"):
-                    return _tool_result(snapshot)
                 raise RuntimeError("The original card snapshot is no longer available.")
             return _tool_result(
                 usage_card(

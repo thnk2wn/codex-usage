@@ -220,6 +220,20 @@ test('tool input can hydrate a text-only card when metadata is absent', async ()
   assert.ok(host.root.innerHTML.includes('Test task'), 'fetched report should render');
 });
 
+test('text-only tool output does not mask the tool input fallback', async () => {
+  const host = boot();
+  await initialize(host);
+  host.fire('openai:set_globals', {
+    globals: {
+      toolOutput: [{ type: 'text', text: 'Usage summary' }],
+      toolInput: { thread_id: 'task-1' }
+    }
+  });
+  const calls = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
+  assert.strictEqual(calls.length, 1, 'text output must not prevent compact hydration');
+  assert.strictEqual(calls[0].params.arguments.thread_id, 'task-1');
+});
+
 test('a wrapped payload on the tool-result channel is recognised', async () => {
   const host = boot();
   await initialize(host);

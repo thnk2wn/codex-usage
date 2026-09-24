@@ -159,10 +159,15 @@
         return null;
       };
       // The initial card uses hidden metadata. If a host omits it, the tool
-      // input is enough to request a fresh compact report. Older cards may
-      // still carry a structured reference with an original snapshot ID.
-      const cardFrom = source => reportIn(source) || source?.toolOutput ||
-        (source?.toolInput?.thread_id ? { kind: 'usage_card_ref', threadId: source.toolInput.thread_id } : null);
+      // input is enough to request a compact report. Older cards may still
+      // carry a structured reference with an original snapshot ID. Text-only
+      // mobile output is not card data and must not mask the tool input.
+      const cardFrom = source => {
+        const output = source?.toolOutput;
+        return reportIn(source) ||
+          (output?.kind === 'usage_card' || output?.kind === 'usage_card_ref' ? output : null) ||
+          (source?.toolInput?.thread_id ? { kind: 'usage_card_ref', threadId: source.toolInput.thread_id } : null);
+      };
       const notify = (method, params = {}) => {
         window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
       };

@@ -110,6 +110,19 @@ class UsageCardTest(unittest.TestCase):
             self.assertTrue(current_read.called)
             scan.assert_not_called()
 
+            with self.assertRaisesRegex(RuntimeError, "original card snapshot"):
+                server._handle(
+                    "tools/call",
+                    {
+                        "name": "refresh_usage_card",
+                        "arguments": {
+                            "thread_id": "task-1",
+                            "include_details": False,
+                            "snapshot_id": "legacy-snapshot",
+                        },
+                    },
+                )
+
             detailed = server._handle(
                 "tools/call",
                 {
