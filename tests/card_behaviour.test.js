@@ -193,17 +193,14 @@ test('a wrapped payload does not fall through to the refresh fallback', async ()
   assert.strictEqual(calls.length, 0, 'should not hydrate when the payload was delivered');
 });
 
-test('a reference with no metadata triggers hydration', async () => {
+test('a legacy reference with a snapshot ID shows unavailable without fetching', async () => {
   const host = boot();
   await initialize(host);
   host.fire('openai:set_globals', {
     globals: { toolOutput: { kind: 'usage_card_ref', threadId: 'task-1', snapshotId: 'snapshot-1' } }
   });
-  const call = host.sent.find(m => m.method === 'tools/call' && m.params?.name === 'refresh_usage_card');
-  assert.ok(call, 'card should request its own data when metadata is absent');
-  assert.strictEqual(call.params.arguments.thread_id, 'task-1');
-  assert.strictEqual(call.params.arguments.include_details, false, 'fallback should only recover the compact header');
-  assert.strictEqual(call.params.arguments.snapshot_id, 'snapshot-1', 'fallback should recover the original snapshot');
+  assert.strictEqual(host.sent.filter(m => m.params?.name === 'refresh_usage_card').length, 0);
+  assert.ok(host.root.innerHTML.includes('Original card snapshot unavailable'));
 });
 
 test('tool input can hydrate a text-only card when metadata is absent', async () => {

@@ -826,10 +826,6 @@ TOOLS = [
                 "default": True,
                 "description": "False only when recovering the compact header after missing component metadata.",
             },
-            "snapshot_id": {
-                "type": "string",
-                "description": "Legacy snapshot ID; unavailable originals are never replaced with newer usage.",
-            },
             "from_tool_input": {
                 "type": "boolean",
                 "description": "True only for a new card recovering a missing component payload from its original tool input.",

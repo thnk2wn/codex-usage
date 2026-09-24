@@ -160,7 +160,7 @@
       };
       // The initial card uses hidden metadata. If a host omits it, the tool
       // input is enough to request a compact report. Older cards may still
-      // carry a structured reference with an original snapshot ID. Text-only
+      // carry a structured reference, but this version cannot recover it. Text-only
       // mobile output is not card data and must not mask the tool input.
       const cardFrom = source => {
         const output = source?.toolOutput;
@@ -201,7 +201,7 @@
       const hydrate = ref => {
         const threadId = ref && ref.threadId;
         if (hydrating || !initialized || latestData) return;
-        if (ref.kind === 'usage_card_ref' && !ref.snapshotId) {
+        if (ref.kind === 'usage_card_ref') {
           root.innerHTML = '<div class="loading">Original card snapshot unavailable.</div>';
           reportHeight();
           return;
@@ -219,7 +219,6 @@
           window.setTimeout(() => hydrate(ref), backoff);
         };
         const arguments_ = { thread_id: threadId, include_details: false };
-        if (ref.snapshotId) arguments_.snapshot_id = ref.snapshotId;
         if (ref.kind === 'usage_card_input_ref') arguments_.from_tool_input = true;
         request('tools/call', {
           name: 'refresh_usage_card',
