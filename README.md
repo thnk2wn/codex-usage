@@ -91,7 +91,7 @@ The trusted prompt and tool-completion hooks only decide whether a card is due a
 
 The card does not scan the limit-window task list while collapsed. On first expansion it requests the heavier breakdown once; a brief **Loading cross-task breakdown…** message may appear. That scan is cached for five minutes across requests. Collapsing and expanding the same card again does not fetch it again. The footer distinguishes the card's creation time from the later details-load time.
 
-If a host omits a new card's component metadata, the card uses its tool input to fetch compact values when it first renders, then keeps them fixed. An older card carrying a snapshot reference shows a retryable loading error if its original snapshot is unavailable rather than presenting newer values as its original snapshot.
+If a host omits a new card's component metadata, the card uses its tool input to fetch compact values when it first renders, then keeps them fixed. An older card whose original snapshot cannot be recovered shows an error rather than presenting newer values as its original snapshot.
 
 The 15-minute setting is a minimum gap between new conversation items, not a promise that one will appear exactly every 15 minutes. Change it from any expanded card. The preference is shared globally, while the last-requested timestamp is tracked per task. **Every turn** creates at most one automatic card at prompt submission; tool completions do not add more in that mode.
 

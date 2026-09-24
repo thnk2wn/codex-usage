@@ -102,6 +102,7 @@ class UsageCardTest(unittest.TestCase):
                     "arguments": {
                         "thread_id": "task-1",
                         "include_details": False,
+                        "from_tool_input": True,
                     },
                 },
             )["structuredContent"]
@@ -122,6 +123,19 @@ class UsageCardTest(unittest.TestCase):
                         },
                     },
                 )
+
+            with self.assertRaisesRegex(RuntimeError, "original card snapshot"):
+                server._handle(
+                    "tools/call",
+                    {
+                        "name": "refresh_usage_card",
+                        "arguments": {
+                            "thread_id": "task-1",
+                            "include_details": False,
+                        },
+                    },
+                )
+            self.assertEqual(current_read.call_count, 2)
 
             detailed = server._handle(
                 "tools/call",

@@ -166,7 +166,7 @@
         const output = source?.toolOutput;
         return reportIn(source) ||
           (output?.kind === 'usage_card' || output?.kind === 'usage_card_ref' ? output : null) ||
-          (source?.toolInput?.thread_id ? { kind: 'usage_card_ref', threadId: source.toolInput.thread_id } : null);
+          (source?.toolInput?.thread_id ? { kind: 'usage_card_input_ref', threadId: source.toolInput.thread_id } : null);
       };
       const notify = (method, params = {}) => {
         window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
@@ -200,7 +200,13 @@
       };
       const hydrate = ref => {
         const threadId = ref && ref.threadId;
-        if (hydrating || !initialized || !threadId || latestData) return;
+        if (hydrating || !initialized || latestData) return;
+        if (ref.kind === 'usage_card_ref' && !ref.snapshotId) {
+          root.innerHTML = '<div class="loading">Original card snapshot unavailable.</div>';
+          reportHeight();
+          return;
+        }
+        if (!threadId) return;
         if (hydrateAttempts >= HYDRATE_ATTEMPT_LIMIT) {
           hydrateFailed(ref);
           return;
@@ -214,6 +220,7 @@
         };
         const arguments_ = { thread_id: threadId, include_details: false };
         if (ref.snapshotId) arguments_.snapshot_id = ref.snapshotId;
+        if (ref.kind === 'usage_card_input_ref') arguments_.from_tool_input = true;
         request('tools/call', {
           name: 'refresh_usage_card',
           arguments: arguments_
@@ -297,7 +304,7 @@
         // A bare reference means the host did not deliver _meta: fetch the data.
         // Before ui/initialize resolves the bridge cannot be used, so keep the
         // reference and replay it once initialised.
-        if (data.kind === 'usage_card_ref') {
+        if (data.kind === 'usage_card_ref' || data.kind === 'usage_card_input_ref') {
           if (!initialized) deferred = data;
           else hydrate(data);
           return;

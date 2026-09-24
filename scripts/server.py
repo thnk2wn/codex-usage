@@ -830,6 +830,10 @@ TOOLS = [
                 "type": "string",
                 "description": "Legacy snapshot ID; unavailable originals are never replaced with newer usage.",
             },
+            "from_tool_input": {
+                "type": "boolean",
+                "description": "True only for a new card recovering a missing component payload from its original tool input.",
+            },
         },
         meta={"ui": {"visibility": ["app"]}},
         required=["thread_id"],
@@ -1038,8 +1042,9 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
             return _card_tool_result(usage_card(arguments, include_details=False))
         if name == "refresh_usage_card":
             snapshot_id = arguments.get("snapshot_id")
-            if snapshot_id and not arguments.get("include_details", True):
-                raise RuntimeError("The original card snapshot is no longer available.")
+            if not arguments.get("include_details", True):
+                if snapshot_id or not arguments.get("from_tool_input"):
+                    raise RuntimeError("The original card snapshot is no longer available.")
             return _tool_result(
                 usage_card(
                     {"thread_id": arguments.get("thread_id")},
