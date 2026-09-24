@@ -97,9 +97,9 @@ The 15-minute setting is a minimum gap between new conversation items, not a pro
 
 ## What the plugin itself costs
 
-Cards are MCP tool results, so they occupy conversation context and are not free. Each automatic card costs roughly 100–120 tokens for the hook instruction, summary line, and small task reference. That is down from roughly 410 before the render data was moved out of context and the hook message was reduced to its trigger.
+Cards are MCP tool results, so they occupy conversation context and are not free. Each automatic card contains the hook instruction and a short text summary. The render data stays in component-only metadata. Clients without MCP App rendering show the text in short lines without a second JSON result.
 
-The card's own render data does not enter the conversation at all. It travels in the tool result's `_meta`, which the host delivers only to the component, so the transcript carries just the summary and a small task reference. A larger body does not increase the model-visible result.
+The card's own render data does not enter the conversation at all. It travels in the tool result's `_meta`, which the host delivers only to the component, so the transcript carries just the text summary. A larger body does not increase the model-visible result.
 
 The hook message carries the tool name, the arguments, and a one-line reminder not to narrate the call, which stays in-turn because the skill alone is a weaker guarantee against the model announcing the card. Everything else it used to spell out on every turn now lives in the skill, which loads once per session. What remains is close to the floor: the arguments alone are about 20 tokens, most of that the thread ID.
 

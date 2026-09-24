@@ -8,7 +8,6 @@ import os
 import sqlite3
 import sys
 import threading
-import uuid
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -939,9 +938,9 @@ def _text_summary(report: dict[str, Any]) -> str:
             reaches = datetime.fromtimestamp(
                 pace["reachesLimitAt"], _local_timezone()
             )
-            pace_text = f" · Pace: limit ~{reaches.strftime('%b')} {reaches.day}"
+            pace_text = f"Pace: limit ~{reaches.strftime('%b')} {reaches.day}"
         elif pace.get("status") == "within_limit":
-            pace_text = " · Pace: within limit"
+            pace_text = "Pace: within limit"
         else:
             pace_text = ""
         token_count = report["combinedTokens"]
@@ -952,10 +951,14 @@ def _text_summary(report: dict[str, Any]) -> str:
             if token_count >= 1_000
             else str(token_count)
         )
-        return (
-            f"⚡ Usage · Context {context_text} · Task {session_text} raw · "
-            f"{account_label} {account_text}{pace_text} · Say “usage details” for breakdown."
-        )
+        lines = [
+            f"⚡ Usage · Context {context_text}",
+            f"Task {session_text} raw · {account_label} {account_text} used",
+        ]
+        if pace_text:
+            lines.append(pace_text)
+        lines.append("Say “usage details” for breakdown.")
+        return "\n".join(lines)
     tasks = report.get("tasks") or []
     leader = tasks[0] if tasks else None
     lead = f" Top task: {leader['name']} ({leader['totalTokens']:,})." if leader else ""
@@ -973,26 +976,14 @@ def _tool_result(report: dict[str, Any]) -> dict[str, Any]:
 
 
 def _card_tool_result(report: dict[str, Any]) -> dict[str, Any]:
-    """Return a card without putting its render data in the model's context.
+    """Keep the card data in component-only metadata.
 
-    `structuredContent` and `content` are surfaced to the model and persist in
-    the transcript, where an automatic card is then re-read by every later turn.
-    `_meta` is delivered only to the component, so the card renders from the
-    same data while the conversation carries just the summary line.
-
-    A tiny reference stays in `structuredContent` so the card can recover the
-    original compact snapshot if a host does not deliver `_meta`.
+    Mobile clients without MCP App rendering show both `content` and
+    `structuredContent` when a tool call is expanded. Returning only text here
+    avoids exposing an internal JSON reference as a second mobile result.
     """
-    snapshot_id = uuid.uuid4().hex
-    with _CARD_SNAPSHOTS_LOCK:
-        _CARD_SNAPSHOTS[snapshot_id] = report
     return {
         "content": [{"type": "text", "text": _text_summary(report)}],
-        "structuredContent": {
-            "kind": "usage_card_ref",
-            "threadId": (report.get("thread") or {}).get("id"),
-            "snapshotId": snapshot_id,
-        },
         "_meta": {CARD_REPORT_META_KEY: report},
     }
 

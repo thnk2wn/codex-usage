@@ -40,22 +40,14 @@ class CardToolResultTest(unittest.TestCase):
         self.assertNotIn("combinedTokens", visible)
         self.assertNotIn("topTasks", visible)
 
-    def test_reference_carries_the_thread_id_for_rehydration(self) -> None:
+    def test_mobile_fallback_has_no_json_panel(self) -> None:
         result = server._card_tool_result(_card_report())
-        self.assertEqual(result["structuredContent"]["kind"], "usage_card_ref")
-        self.assertEqual(result["structuredContent"]["threadId"], "task-1")
-
-    def test_reference_carries_the_original_snapshot_id_for_header_recovery(self) -> None:
-        report = _card_report()
-        reference = server._card_tool_result(report)["structuredContent"]
-        self.assertEqual(set(reference), {"kind", "threadId", "snapshotId"})
-        self.assertTrue(reference["snapshotId"])
-
-    def test_reference_survives_a_missing_thread(self) -> None:
-        report = _card_report()
-        report.pop("thread")
-        result = server._card_tool_result(report)
-        self.assertIsNone(result["structuredContent"]["threadId"])
+        self.assertEqual(set(result), {"content", "_meta"})
+        self.assertEqual(len(result["content"]), 1)
+        self.assertEqual(result["content"][0]["type"], "text")
+        self.assertTrue(
+            all(len(line) <= 36 for line in result["content"][0]["text"].splitlines())
+        )
 
     def test_summary_line_is_still_present_for_the_model(self) -> None:
         result = server._card_tool_result(_card_report())

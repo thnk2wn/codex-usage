@@ -85,12 +85,8 @@ class UsageCardTest(unittest.TestCase):
                     "arguments": {"thread_id": "task-1", "live": True},
                 },
             )
-            # The card renders from component-only _meta; the transcript sees
-            # only a summary line and a reference back to this thread.
-            reference = initial_result["structuredContent"]
-            self.assertEqual(reference["kind"], "usage_card_ref")
-            self.assertEqual(reference["threadId"], "task-1")
-            self.assertEqual(set(reference), {"kind", "threadId", "snapshotId"})
+            # The card renders from component-only _meta; mobile sees just text.
+            self.assertNotIn("structuredContent", initial_result)
             initial = initial_result["_meta"][server.CARD_REPORT_META_KEY]
 
             self.assertFalse(initial["detailsLoaded"])
@@ -99,34 +95,20 @@ class UsageCardTest(unittest.TestCase):
             self.assertFalse(initial["liveRefresh"]["enabled"])
             scan.assert_not_called()
 
-            recovered = server._handle(
+            compact = server._handle(
                 "tools/call",
                 {
                     "name": "refresh_usage_card",
                     "arguments": {
                         "thread_id": "task-1",
                         "include_details": False,
-                        "snapshot_id": reference["snapshotId"],
                     },
                 },
             )["structuredContent"]
-            self.assertFalse(recovered["detailsLoaded"])
-            self.assertEqual(recovered["generatedAt"], initial["generatedAt"])
-            current_read.assert_called_once()
+            self.assertFalse(compact["detailsLoaded"])
+            self.assertEqual(compact["thread"]["id"], "task-1")
+            self.assertTrue(current_read.called)
             scan.assert_not_called()
-
-            with self.assertRaisesRegex(RuntimeError, "original card snapshot"):
-                server._handle(
-                    "tools/call",
-                    {
-                        "name": "refresh_usage_card",
-                        "arguments": {
-                            "thread_id": "task-1",
-                            "include_details": False,
-                            "snapshot_id": "missing",
-                        },
-                    },
-                )
 
             detailed = server._handle(
                 "tools/call",

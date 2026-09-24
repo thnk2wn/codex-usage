@@ -206,6 +206,20 @@ test('a reference with no metadata triggers hydration', async () => {
   assert.strictEqual(call.params.arguments.snapshot_id, 'snapshot-1', 'fallback should recover the original snapshot');
 });
 
+test('tool input can hydrate a text-only card when metadata is absent', async () => {
+  const host = boot();
+  await initialize(host);
+  host.fire('openai:set_globals', { globals: { toolInput: { thread_id: 'task-1' } } });
+  const call = host.sent.find(m => m.method === 'tools/call' && m.params?.name === 'refresh_usage_card');
+  assert.ok(call, 'card should request compact data using the original tool input');
+  assert.strictEqual(call.params.arguments.thread_id, 'task-1');
+  assert.strictEqual(call.params.arguments.include_details, false);
+  assert.ok(!('snapshot_id' in call.params.arguments));
+  host.reply(call.id, { structuredContent: report() });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.ok(host.root.innerHTML.includes('Test task'), 'fetched report should render');
+});
+
 test('a wrapped payload on the tool-result channel is recognised', async () => {
   const host = boot();
   await initialize(host);

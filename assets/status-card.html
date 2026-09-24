@@ -158,9 +158,11 @@
         }
         return null;
       };
-      // One rule for what a source contributes: its _meta report, else its
-      // toolOutput (a full report or a usage_card_ref).
-      const cardFrom = source => reportIn(source) || source?.toolOutput;
+      // The initial card uses hidden metadata. If a host omits it, the tool
+      // input is enough to request a fresh compact report. Older cards may
+      // still carry a structured reference with an original snapshot ID.
+      const cardFrom = source => reportIn(source) || source?.toolOutput ||
+        (source?.toolInput?.thread_id ? { kind: 'usage_card_ref', threadId: source.toolInput.thread_id } : null);
       const notify = (method, params = {}) => {
         window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
       };
@@ -205,9 +207,11 @@
           const backoff = Math.min(8000, 500 * Math.pow(2, hydrateAttempts));
           window.setTimeout(() => hydrate(ref), backoff);
         };
+        const arguments_ = { thread_id: threadId, include_details: false };
+        if (ref.snapshotId) arguments_.snapshot_id = ref.snapshotId;
         request('tools/call', {
           name: 'refresh_usage_card',
-          arguments: { thread_id: threadId, include_details: false, snapshot_id: ref.snapshotId }
+          arguments: arguments_
         }).then(result => {
           const report = reportIn(result) || structured(result);
           if (!report) {
@@ -433,6 +437,9 @@
         if (message.method === 'ui/notifications/tool-result') {
           const params = message.params || {};
           render(reportIn(params) || structured(params));
+        }
+        if (message.method === 'ui/notifications/tool-input') {
+          render(cardFrom({ toolInput: message.params }));
         }
       }, { passive: true });
       render(cardFrom(window.openai));
