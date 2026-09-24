@@ -815,7 +815,7 @@ TOOLS = [
     ),
     _tool_descriptor(
         "refresh_usage_card",
-        "Load a card's full details once when expanded, or recover its compact header when component metadata is unavailable.",
+        "Load a card's full details once when expanded.",
         {
             "thread_id": {
                 "type": "string",
@@ -824,11 +824,7 @@ TOOLS = [
             "include_details": {
                 "type": "boolean",
                 "default": True,
-                "description": "False only when recovering the compact header after missing component metadata.",
-            },
-            "from_tool_input": {
-                "type": "boolean",
-                "description": "True only for a new card recovering a missing component payload from its original tool input.",
+                "description": "Legacy false requests cannot recover an original compact snapshot.",
             },
         },
         meta={"ui": {"visibility": ["app"]}},
@@ -1037,10 +1033,8 @@ def _handle(method: str, params: dict[str, Any]) -> Any:
         if name == "show_usage_card":
             return _card_tool_result(usage_card(arguments, include_details=False))
         if name == "refresh_usage_card":
-            snapshot_id = arguments.get("snapshot_id")
             if not arguments.get("include_details", True):
-                if snapshot_id or not arguments.get("from_tool_input"):
-                    raise RuntimeError("The original card snapshot is no longer available.")
+                raise RuntimeError("The original card snapshot is no longer available.")
             return _tool_result(
                 usage_card(
                     {"thread_id": arguments.get("thread_id")},

@@ -180,7 +180,7 @@ test('reads a payload under the call_tool_result envelope', async () => {
   assert.ok(host.root.innerHTML.includes('ALTKEY'), 'alternate envelope payload should render');
 });
 
-test('a wrapped payload does not fall through to the refresh fallback', async () => {
+test('a wrapped payload does not trigger a usage fetch', async () => {
   const host = boot();
   await initialize(host);
   host.fire('openai:set_globals', {
@@ -190,7 +190,7 @@ test('a wrapped payload does not fall through to the refresh fallback', async ()
     }
   });
   const calls = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
-  assert.strictEqual(calls.length, 0, 'should not hydrate when the payload was delivered');
+  assert.strictEqual(calls.length, 0, 'a delivered payload should not trigger a usage fetch');
 });
 
 test('a legacy reference with a snapshot ID shows unavailable without fetching', async () => {
@@ -203,22 +203,19 @@ test('a legacy reference with a snapshot ID shows unavailable without fetching',
   assert.ok(host.root.innerHTML.includes('Original card snapshot unavailable'));
 });
 
-test('tool input can hydrate a text-only card when metadata is absent', async () => {
+test('missing metadata never fetches newer usage and late original metadata can render', async () => {
   const host = boot();
   await initialize(host);
   host.fire('openai:set_globals', { globals: { toolInput: { thread_id: 'task-1' } } });
-  const call = host.sent.find(m => m.method === 'tools/call' && m.params?.name === 'refresh_usage_card');
-  assert.ok(call, 'card should request compact data using the original tool input');
-  assert.strictEqual(call.params.arguments.thread_id, 'task-1');
-  assert.strictEqual(call.params.arguments.include_details, false);
-  assert.strictEqual(call.params.arguments.from_tool_input, true);
-  assert.ok(!('snapshot_id' in call.params.arguments));
-  host.reply(call.id, { structuredContent: report() });
-  await new Promise(resolve => setTimeout(resolve, 0));
-  assert.ok(host.root.innerHTML.includes('Test task'), 'fetched report should render');
+  assert.strictEqual(host.sent.filter(m => m.params?.name === 'refresh_usage_card').length, 0);
+  assert.ok(host.root.innerHTML.includes('Original card snapshot unavailable'));
+  host.fire('openai:set_globals', {
+    globals: { toolResponseMetadata: { [META_KEY]: report({ thread: { id: 'task-1', name: 'ORIGINAL' } }) } }
+  });
+  assert.ok(host.root.innerHTML.includes('ORIGINAL'), 'late original metadata should render');
 });
 
-test('text-only tool output does not mask the tool input fallback', async () => {
+test('text-only tool output does not mask the unavailable state', async () => {
   const host = boot();
   await initialize(host);
   host.fire('openai:set_globals', {
@@ -228,11 +225,11 @@ test('text-only tool output does not mask the tool input fallback', async () => 
     }
   });
   const calls = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
-  assert.strictEqual(calls.length, 1, 'text output must not prevent compact hydration');
-  assert.strictEqual(calls[0].params.arguments.thread_id, 'task-1');
+  assert.strictEqual(calls.length, 0, 'text output must not trigger a new usage read');
+  assert.ok(host.root.innerHTML.includes('Original card snapshot unavailable'));
 });
 
-test('tool-input notification unwraps standard arguments before hydration', async () => {
+test('standard tool-input notification shows unavailable without fetching', async () => {
   const host = boot({ noOpenai: true });
   await initialize(host);
   host.fire('message', {
@@ -241,10 +238,8 @@ test('tool-input notification unwraps standard arguments before hydration', asyn
     params: { arguments: { thread_id: 'task-1' } }
   });
   const calls = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
-  assert.strictEqual(calls.length, 1, 'standard notification should trigger compact hydration');
-  assert.strictEqual(calls[0].params.arguments.thread_id, 'task-1');
-  assert.strictEqual(calls[0].params.arguments.include_details, false);
-  assert.strictEqual(calls[0].params.arguments.from_tool_input, true);
+  assert.strictEqual(calls.length, 0);
+  assert.ok(host.root.innerHTML.includes('Original card snapshot unavailable'));
 });
 
 test('tool-input notification retains direct arguments compatibility', async () => {
@@ -256,9 +251,8 @@ test('tool-input notification retains direct arguments compatibility', async () 
     params: { thread_id: 'task-1' }
   });
   const calls = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
-  assert.strictEqual(calls.length, 1);
-  assert.strictEqual(calls[0].params.arguments.thread_id, 'task-1');
-  assert.strictEqual(calls[0].params.arguments.from_tool_input, true);
+  assert.strictEqual(calls.length, 0);
+  assert.ok(host.root.innerHTML.includes('Original card snapshot unavailable'));
 });
 
 test('a legacy reference without a snapshot cannot fetch current usage', async () => {
@@ -354,19 +348,36 @@ test('details-load failure reports the error panel height to the host', async ()
   assert.ok(host.heights.includes(20), 'the host should receive the new error-panel height');
 });
 
-test('tool input delivered before init is replayed after init', async () => {
-  // Host with no window.openai posts the input while ui/initialize is
-  // still in flight. It must be kept and hydrated once the bridge is up.
+test('tool input delivered before init waits for the original metadata', async () => {
+  // Host with no window.openai posts input before ui/initialize resolves.
+  // It must not fetch a newer compact report while waiting for metadata.
   const host = boot({ noOpenai: true });
   host.fire('message', {
     jsonrpc: '2.0',
     method: 'ui/notifications/tool-input',
     params: { arguments: { thread_id: 'task-1' } }
   });
-  assert.strictEqual(host.sent.filter(m => m.params?.name === 'refresh_usage_card').length, 0, 'cannot hydrate before init');
+  assert.strictEqual(host.sent.filter(m => m.params?.name === 'refresh_usage_card').length, 0);
   await initialize(host);
-  const calls = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
-  assert.strictEqual(calls.length, 1, 'pre-init reference should hydrate exactly once after init');
+  assert.strictEqual(host.sent.filter(m => m.params?.name === 'refresh_usage_card').length, 0);
+  assert.ok(host.root.innerHTML.includes('Original card snapshot unavailable'));
+});
+
+test('original metadata arriving before init wins over missing-metadata input', async () => {
+  const host = boot({ noOpenai: true });
+  host.fire('message', {
+    jsonrpc: '2.0',
+    method: 'ui/notifications/tool-input',
+    params: { arguments: { thread_id: 'task-1' } }
+  });
+  host.fire('message', {
+    jsonrpc: '2.0',
+    method: 'ui/notifications/tool-result',
+    params: { _meta: { [META_KEY]: report({ thread: { id: 'task-1', name: 'ORIGINAL' } }) } }
+  });
+  await initialize(host);
+  assert.ok(host.root.innerHTML.includes('ORIGINAL'));
+  assert.strictEqual(host.sent.filter(m => m.params?.name === 'refresh_usage_card').length, 0);
 });
 
 test('a re-delivered reference never replaces a rendered card', async () => {
@@ -380,7 +391,7 @@ test('a re-delivered reference never replaces a rendered card', async () => {
   host.fire('openai:set_globals', {
     globals: { theme: 'dark', toolOutput: { kind: 'usage_card_ref', threadId: 'task-1' } }
   });
-  assert.strictEqual(host.sent.filter(m => m.params?.name === 'refresh_usage_card').length, 0, 'must not hydrate over a rendered card');
+  assert.strictEqual(host.sent.filter(m => m.params?.name === 'refresh_usage_card').length, 0, 'must not fetch over a rendered card');
   assert.ok(host.root.innerHTML.includes('GOOD'), 'rendered card must survive');
 });
 
@@ -393,37 +404,6 @@ test('a later tool result cannot overwrite a completed card', async () => {
   host.fire('message', { jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { _meta: { [META_KEY]: later } } });
   assert.ok(host.root.innerHTML.includes('ORIGINAL'), 'original snapshot must remain');
   assert.ok(!host.root.innerHTML.includes('LATER'));
-});
-
-test('a render error during hydration does not loop the fallback', async () => {
-  const host = boot();
-  await initialize(host);
-  host.fire('openai:set_globals', { globals: { toolInput: { thread_id: 'task-1' } } });
-  const first = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
-  assert.strictEqual(first.length, 1);
-  // A report that makes render throw (non-numeric reset epoch reaches `when`).
-  const poison = report({ limit: { usedPercent: 50, resetsAt: 'not-a-number', windowMinutes: 60 } });
-  host.reply(first[0].id, { structuredContent: poison });
-  await new Promise(resolve => setTimeout(resolve, 1600));
-  const after = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
-  assert.strictEqual(after.length, 1, `render errors must not re-request; saw ${after.length}`);
-});
-
-test('a failed hydration retries instead of stranding the card', async () => {
-  const host = boot();
-  await initialize(host);
-  host.fire('openai:set_globals', {
-    globals: { toolInput: { thread_id: 'task-1' } }
-  });
-  const first = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
-  assert.strictEqual(first.length, 1);
-
-  // Fail it the way the bridge would.
-  host.fire('message', { jsonrpc: '2.0', id: first[0].id, error: { message: 'nope' } });
-  await new Promise(resolve => setTimeout(resolve, 1400));
-
-  const after = host.sent.filter(m => m.params?.name === 'refresh_usage_card');
-  assert.ok(after.length > 1, `expected a retry, saw ${after.length} call(s)`);
 });
 
 (async () => {

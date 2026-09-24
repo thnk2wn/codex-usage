@@ -79,7 +79,7 @@ See [OpenAI's plugin submission documentation](https://developers.openai.com/plu
 
 - Automatic cards have a minimum 15-minute gap per task by default. A qualifying user prompt or a tool completion during a long turn requests a **new** compact card after that gap; no timer posts cards into an idle task. Each card's usage values stay fixed.
 - The minimized header shows when the card was created and the remaining account capacity. It turns amber when 15% or less remains or current pace projects over the limit, and red when 10% or less remains. Expanding a card fetches its top-five task breakdown once and shows when those details loaded. The initial task metrics remain fixed at creation time. The setting is labeled **New cards (minimum gap)** and offers every turn, 30 seconds, 1/5/15 minutes, or off. Open card instances synchronize that preference when the client permits it, and every historical card rechecks it when expanded.
-- `show_usage_card` can also render a card on demand. `refresh_usage_card` only recovers a compact header when component metadata is unavailable or loads the full body on first expansion; it does not run on a timer.
+- `show_usage_card` can also render a card on demand. `refresh_usage_card` only loads the full body on first expansion; it does not run on a timer.
 - Mobile Remote falls back to a short multi-line status result when it does not render the MCP App iframe; say `usage details` for a text breakdown. That path uses `usage_details`, which returns the same report as model-readable data, because a card's own render payload is delivered to the component only.
 - `open_usage_dashboard` starts the optional private localhost dashboard for a larger cross-task view.
 - The old text-only `current_conversation_usage` tool is retained for compatibility but hidden from the model so automatic card requests cannot be routed into raw JSON. Ask for a usage card to see a concise header with expandable details.
@@ -91,7 +91,7 @@ The trusted prompt and tool-completion hooks only decide whether a card is due a
 
 The card does not scan the limit-window task list while collapsed. On first expansion it requests the heavier breakdown once; a brief **Loading cross-task breakdown…** message may appear. That scan is cached for five minutes across requests. Collapsing and expanding the same card again does not fetch it again. The footer distinguishes the card's creation time from the later details-load time.
 
-If a host omits a new card's component metadata, the card uses its tool input to fetch compact values when it first renders, then keeps them fixed. An older card whose original snapshot cannot be recovered shows an error rather than presenting newer values as its original snapshot.
+If a host omits a card's component metadata, the card shows an unavailable state rather than fetching current values and presenting them as the original snapshot. If the host later delivers the original metadata, the card renders that snapshot. Mobile clients without the inline app still receive the short text result.
 
 The 15-minute setting is a minimum gap between new conversation items, not a promise that one will appear exactly every 15 minutes. Change it from any expanded card. The preference is shared globally, while the last-requested timestamp is tracked per task. **Every turn** creates at most one automatic card at prompt submission; tool completions do not add more in that mode.
 

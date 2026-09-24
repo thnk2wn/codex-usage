@@ -99,8 +99,6 @@
       let latestData = null;
       let detailsLoading = false;
       let detailsError = false;
-      let hydrating = false;
-      let hydrateAttempts = 0;
       let deferred = null;
       let preferenceChannel = null;
       try {
@@ -119,8 +117,8 @@
       const META_KEY = 'codexUsage/report';
       // The card's render data arrives as component-only _meta, a first-paint
       // optimisation so the model's context never carries it. If a host does not
-      // deliver it, tool input can request compact data through
-      // refresh_usage_card (see hydrate). Older tool results may hold a reference.
+      // deliver it, the original snapshot cannot safely be reconstructed from
+      // current usage. Older tool results may hold a reference.
       //
       // Hosts expose the metadata under different global names and may hand over
       // the whole tool result (mcp_tool_result, call_tool_result, ...) with the
@@ -158,15 +156,14 @@
         }
         return null;
       };
-      // The initial card uses hidden metadata. If a host omits it, the tool
-      // input is enough to request a compact report. Older cards may still
-      // carry a structured reference, but this version cannot recover it. Text-only
-      // mobile output is not card data and must not mask the tool input.
+      // The initial card uses hidden metadata. If a host omits it, tool input
+      // tells us a card was requested but cannot reconstruct its original data.
+      // Text-only mobile output is not card data and must not mask tool input.
       const cardFrom = source => {
         const output = source?.toolOutput;
         return reportIn(source) ||
           (output?.kind === 'usage_card' || output?.kind === 'usage_card_ref' ? output : null) ||
-          (source?.toolInput?.thread_id ? { kind: 'usage_card_input_ref', threadId: source.toolInput.thread_id } : null);
+          (source?.toolInput?.thread_id ? { kind: 'usage_card_unavailable' } : null);
       };
       const notify = (method, params = {}) => {
         window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
@@ -176,67 +173,6 @@
         const response = new Promise((resolve, reject) => pendingRequests.set(id, { resolve, reject }));
         window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
         return response;
-      };
-      // Fallback for hosts that do not deliver component metadata. It only ever
-      // runs while nothing is rendered: once a card is on screen it is never
-      // replaced by this path, so a re-delivered reference cannot destroy a good
-      // card or un-freeze a historical snapshot. Transport failures retry with
-      // bounded backoff, then offer an explicit Retry. A render error is not a
-      // transport error and is never retried automatically.
-      const HYDRATE_ATTEMPT_LIMIT = 4;
-      const hydrateFailed = ref => {
-        if (latestData) return;
-        root.innerHTML = `<div class="loading">Could not read local Codex usage. <button type="button" id="hydrate-retry">Retry</button></div>`;
-        const button = root.querySelector('#hydrate-retry');
-        if (button) {
-          button.addEventListener('click', () => {
-            hydrateAttempts = 0;
-            root.innerHTML = '<div class="loading">Reading local Codex usage…</div>';
-            reportHeight();
-            hydrate(ref);
-          });
-        }
-        reportHeight();
-      };
-      const hydrate = ref => {
-        const threadId = ref && ref.threadId;
-        if (hydrating || !initialized || latestData) return;
-        if (ref.kind === 'usage_card_ref') {
-          root.innerHTML = '<div class="loading">Original card snapshot unavailable.</div>';
-          reportHeight();
-          return;
-        }
-        if (!threadId) return;
-        if (hydrateAttempts >= HYDRATE_ATTEMPT_LIMIT) {
-          hydrateFailed(ref);
-          return;
-        }
-        hydrating = true;
-        hydrateAttempts += 1;
-        const retry = () => {
-          hydrating = false;
-          const backoff = Math.min(8000, 500 * Math.pow(2, hydrateAttempts));
-          window.setTimeout(() => hydrate(ref), backoff);
-        };
-        const arguments_ = { thread_id: threadId, include_details: false };
-        if (ref.kind === 'usage_card_input_ref') arguments_.from_tool_input = true;
-        request('tools/call', {
-          name: 'refresh_usage_card',
-          arguments: arguments_
-        }).then(result => {
-          const report = reportIn(result) || structured(result);
-          if (!report) {
-            retry();
-            return;
-          }
-          hydrating = false;
-          hydrateAttempts = 0;
-          try {
-            render(report);
-          } catch (_error) {
-            hydrateFailed(ref);
-          }
-        }, retry);
       };
       const reportHeight = () => {
         window.requestAnimationFrame(() => {
@@ -300,12 +236,15 @@
       };
       function render(data, detailsResponse = false) {
         if (!data) return;
-        // A bare reference means the host did not deliver _meta: fetch the data.
-        // Before ui/initialize resolves the bridge cannot be used, so keep the
-        // reference and replay it once initialised.
-        if (data.kind === 'usage_card_ref' || data.kind === 'usage_card_input_ref') {
+        // Missing metadata cannot be reconstructed from current usage. A later
+        // delivery of the original metadata may still replace this error.
+        if (data.kind === 'usage_card_ref' || data.kind === 'usage_card_unavailable') {
+          if (latestData) return;
           if (!initialized) deferred = data;
-          else hydrate(data);
+          else {
+            root.innerHTML = '<div class="loading">Original card snapshot unavailable.</div>';
+            reportHeight();
+          }
           return;
         }
         if (data.kind !== 'usage_card') return;

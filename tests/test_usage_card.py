@@ -95,47 +95,22 @@ class UsageCardTest(unittest.TestCase):
             self.assertFalse(initial["liveRefresh"]["enabled"])
             scan.assert_not_called()
 
-            compact = server._handle(
-                "tools/call",
-                {
-                    "name": "refresh_usage_card",
-                    "arguments": {
-                        "thread_id": "task-1",
-                        "include_details": False,
-                        "from_tool_input": True,
-                    },
-                },
-            )["structuredContent"]
-            self.assertFalse(compact["detailsLoaded"])
-            self.assertEqual(compact["thread"]["id"], "task-1")
-            self.assertTrue(current_read.called)
+            old_request_args = ({}, {"snapshot_id": "legacy-snapshot"}, {"from_tool_input": True})
+            for extra in old_request_args:
+                with self.assertRaisesRegex(RuntimeError, "original card snapshot"):
+                    server._handle(
+                        "tools/call",
+                        {
+                            "name": "refresh_usage_card",
+                            "arguments": {
+                                "thread_id": "task-1",
+                                "include_details": False,
+                                **extra,
+                            },
+                        },
+                    )
+            self.assertEqual(current_read.call_count, 1)
             scan.assert_not_called()
-
-            with self.assertRaisesRegex(RuntimeError, "original card snapshot"):
-                server._handle(
-                    "tools/call",
-                    {
-                        "name": "refresh_usage_card",
-                        "arguments": {
-                            "thread_id": "task-1",
-                            "include_details": False,
-                            "snapshot_id": "legacy-snapshot",
-                        },
-                    },
-                )
-
-            with self.assertRaisesRegex(RuntimeError, "original card snapshot"):
-                server._handle(
-                    "tools/call",
-                    {
-                        "name": "refresh_usage_card",
-                        "arguments": {
-                            "thread_id": "task-1",
-                            "include_details": False,
-                        },
-                    },
-                )
-            self.assertEqual(current_read.call_count, 2)
 
             detailed = server._handle(
                 "tools/call",
